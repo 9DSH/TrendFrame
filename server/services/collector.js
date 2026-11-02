@@ -84,9 +84,6 @@ export function startCollection(input = {}, trigger = 'manual') {
 
   const options = resolveOptions(input);
   const plan = buildPlan(options);
-  const quota = getQuotaStatus();
-  if (quota.available <= 0)
-    throw httpError(429, `Daily quota budget used up (${quota.used}/${quota.limit} units). Resets at midnight Pacific Time.`);
 
   const runId = Number(
     db.prepare('INSERT INTO collection_runs (started_at, status, trigger, options) VALUES (?, ?, ?, ?)')

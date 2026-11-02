@@ -20,7 +20,7 @@ const HINTS = {
 
 async function call(endpoint, params) {
   if (!config.youtubeKey) throw new YouTubeApiError('YOUTUBE_API_KEY is missing in .env', { reason: 'missingKey' });
-  chargeQuota(endpoint);
+  // chargeQuota(endpoint);
 
   const url = new URL(`${BASE}/${endpoint.split('.')[0]}`);
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, v);
@@ -30,8 +30,10 @@ async function call(endpoint, params) {
   try {
     res = await fetch(url);
   } catch (e) {
+   // refundQuota(endpoint);   // add to quota.js: UPDATE quota_usage SET units = MAX(units - cost, 0)
     throw new YouTubeApiError(`Network error: ${e.message}`, { reason: 'network' });
-  }
+    }
+  chargeQuota(endpoint);   // <-- here: Google answered, so the units are spent
   const body = await res.json().catch(() => ({}));
 
   if (!res.ok) {

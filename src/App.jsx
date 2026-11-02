@@ -17,10 +17,10 @@ export default function App() {
         <div className="mx-auto max-w-7xl">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/topics" element={<Topics />} />
-            <Route path="/analytics/:id?" element={<Analytics />} />
             <Route path="/collection" element={<Page title="Collection" subtitle="Fetch videos and build snapshot history"><Collection /></Page>} />
             <Route path="/scoring" element={<Page title="Scoring & settings" subtitle="Weights, analysis controls and AI naming"><Analysis /></Page>} />
+            <Route path="/topics" element={<Topics />} />
+            <Route path="/analytics/:id?" element={<Analytics />} />
             <Route path="/research/:id?" element={<Research />} />
             <Route path="/ideas/:id?" element={<Ideas />} />
             <Route path="*" element={<p className="text-slate-400">Page not found.</p>} />

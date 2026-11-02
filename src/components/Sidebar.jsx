@@ -2,12 +2,12 @@ import { NavLink } from 'react-router-dom';
 
 const ITEMS = [
   ['/', 'Dashboard', true],
+  ['/collection', 'Collection'],
+  ['/scoring', 'Scoring & settings'],
   ['/topics', 'Trending topics'],
   ['/analytics', 'Analytics'],
   ['/research', 'AI research'],
   ['/ideas', 'Animation ideas'],
-  ['/collection', 'Collection'],
-  ['/scoring', 'Scoring & settings'],
 ];
 const SOON = ['Saved projects'];
 

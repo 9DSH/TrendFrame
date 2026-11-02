@@ -100,11 +100,22 @@ export default function Collection() {
           </div>
         </Card>
         <Card title="API quota (today, Pacific Time)">
-          {quota && (<>
-            <div className="mb-1 flex justify-between text-sm"><span>{nf.format(quota.used)} / {nf.format(quota.limit)} units</span><span className="text-slate-500">{nf.format(quota.available)} usable</span></div>
+        {quota && (<>
+            {quota.exhausted && (
+            <p className="mb-2 rounded border border-down/50 bg-down/10 p-2 text-xs text-down">
+                Google reported the daily quota is exhausted. It resets at midnight Pacific Time.
+            </p>
+            )}
+            <div className="mb-1 flex justify-between text-sm">
+            <span>~{nf.format(quota.used)} / {nf.format(quota.limit)} units</span>
+            <span className="text-slate-500">estimate</span>
+            </div>
             <div className="h-2 rounded bg-bg"><div className="h-2 rounded bg-accent" style={{ width: `${used}%` }} /></div>
-            <p className="mt-2 text-xs text-slate-500">Counted locally; {quota.reserve} units are kept in reserve. Resets at midnight Pacific.</p>
-          </>)}
+            <p className="mt-2 text-xs text-slate-500">
+            Counted locally from the calls this app made. Nothing is blocked by this number; Google decides.
+            Exact usage: Google Cloud Console → YouTube Data API v3 → Quotas.
+            </p>
+        </>)}
         </Card>
         <Card title="Status">
           {status.running
