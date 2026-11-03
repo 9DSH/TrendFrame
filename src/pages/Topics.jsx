@@ -117,9 +117,9 @@ export default function Topics() {
                   </td>
                   <td className="pr-3 whitespace-nowrap"><Direction direction={t.direction} /> <StatusBadge status={t.status} /></td>
                   <td className="pr-3">{num(t.videoCount)}</td>
-                  <td className="whitespace-nowrap pr-3">{t.shortCount == null ? '—' : `${t.shortCount} / ${t.longCount}`}</td>
                   <td className="pr-3">{num(t.channelCount)}</td>
-                  
+                  <td className="whitespace-nowrap pr-3">{t.shortCount == null ? '—' : `${t.shortCount} / ${t.longCount}`}</td>
+                                    
                   <td className={`pr-3 capitalize ${COMPETITION_STYLE[t.competitionLevel]}`}>{t.competitionLevel}</td>
                   <td className="whitespace-nowrap text-slate-400">{dateTime(t.computedAt)}</td>
                 </tr>

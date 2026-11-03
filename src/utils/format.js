@@ -33,6 +33,18 @@ export const STATUS = {
   unclear: ['Unclear', 'bg-slate-500/20 text-slate-400'],
 };
 
+// Order = pipeline order (used for the "next stage" button)
+export const PROJECT_STATUS = {
+  discovered: ['Discovered', 'bg-slate-500/20 text-slate-300'],
+  researching: ['Researching', 'bg-accent/20 text-accent'],
+  approved: ['Approved', 'bg-up/20 text-up'],
+  scripting: ['Scripting', 'bg-accent2/20 text-accent2'],
+  asset_preparation: ['Asset preparation', 'bg-yellow-400/20 text-yellow-400'],
+  animation: ['Animation', 'bg-orange-400/20 text-orange-400'],
+  editing: ['Editing', 'bg-pink-400/20 text-pink-400'],
+  published: ['Published', 'bg-up/30 text-up'],
+};
+
 export const METRICS = {
   trend_momentum: 'Trend momentum', view_velocity: 'View velocity', engagement: 'Engagement',
   cross_channel: 'Cross-channel interest', competition: 'Competition opportunity',

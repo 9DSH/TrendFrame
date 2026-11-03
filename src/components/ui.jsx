@@ -30,12 +30,15 @@ export function Card({ title, kind, info, right, children, className = '' }) {
   );
 }
 
-export function Stat({ label, value, sub, info, tone = 'text-white' }) {
+export function Stat({ label, value, sub, info, tone = 'text-white', onClick, active }) {
   return (
-    <div className="rounded-lg border border-line bg-panel p-3">
+    <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter') onClick(); } : undefined}
+      className={`rounded-lg border bg-panel p-3 ${active ? 'border-accent' : 'border-line'} ${onClick ? 'cursor-pointer hover:border-accent' : ''}`}>
       <div className="text-xs text-slate-500">{label}{info && <Info term={info} />}</div>
       <div className={`text-2xl font-semibold ${tone}`}>{value}</div>
       {sub && <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>}
+      {onClick && <div className="mt-1 text-[10px] text-accent">click for details</div>}
     </div>
   );
 }

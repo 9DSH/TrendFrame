@@ -9,18 +9,21 @@ import Info from '../components/Info.jsx';
 import { Card, TypeSelect,TypeBadge, Direction, Empty, Notice, Page, Stat, StatusBadge } from '../components/ui.jsx';
 import { Chart, axis, barCursor, gridProps, legendProps, tooltipProps } from '../components/charts.jsx';
 import { COLORS, SERIES, dayLabel, num, short, timeAgo, trunc } from '../utils/format.js';
+import DashboardDetails from '../components/DashboardDetails.jsx';
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [type, setType] = useState('');
+  const [kind, setKind] = useState('discovered');
+
 
   const load = useCallback(async () => {
     try { setData(await api.dashboard(type)); setError(''); } catch (e) { setError(e.message); }
   }, [type]);
   useEffect(() => { load(); }, [load]);
   const jobs = useJobs(load);
-
+  const pick = (k) => setKind(k);
   if (!data) return <p className="text-slate-400">{error || 'Loading…'}</p>;
   const { videos, summary, typeSplit, categories, topOpportunities, growth, scoreTrend, recentDiscoveries, lastRun } = data;
   const chartCats = categories.filter((c) => c.avgScore != null).map((c) => ({ ...c, label: trunc(c.label, 22) }));
@@ -38,11 +41,16 @@ export default function Dashboard() {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Stat label="Monitored videos" info="monitored" value={num(videos.tracked)} sub={`published in last ${videos.trackingDays} d · ${num(videos.total)} collected`} />
-        <Stat label="Discovered topics" value={num(summary.discovered)} sub={`${num(videos.channels)} channels seen`} />
-        <Stat label="Emerging topics" info="status_emerging" value={num(summary.emerging)} tone="text-accent2" sub={`${num(summary.growing)} rapidly growing`} />
-        <Stat label="High-opportunity" info="high_opportunity" value={num(summary.highOpportunity)} tone="text-up" sub={`score ≥ ${summary.highThreshold}, confidence ≥ ${Math.round(summary.highMinConfidence * 100)}%`} />
+        <Stat label="Monitored videos" info="monitored" value={num(videos.tracked)} sub={`published in last ${videos.trackingDays} d · ${num(videos.total)} collected`} onClick={() => pick('monitored')} active={kind === 'monitored'} />
+        <Stat label="Discovered topics" value={num(summary.discovered)} sub={`${num(videos.channels)} channels seen`} onClick={() => pick('discovered')} active={kind === 'discovered'} />
+        <Stat label="Emerging topics" info="status_emerging" value={num(summary.emerging)} tone="text-accent2" sub={`${num(summary.growing)} rapidly growing (see tab)`} onClick={() => pick('emerging')} active={kind === 'emerging'} />
+        <Stat label="High-opportunity" info="high_opportunity" value={num(summary.highOpportunity)} tone="text-up" sub={`score ≥ ${summary.highThreshold}, confidence ≥ ${Math.round(summary.highMinConfidence * 100)}%`} onClick={() => pick('high')} active={kind === 'high'} />
         <Stat label="Top score" info="opportunity_score" value={topOpportunities[0] ? topOpportunities[0].score.toFixed(1) : '—'} sub={topOpportunities[0] ? trunc(topOpportunities[0].name, 28) : ''} />
+      </div>
+
+      <div>
+        <DashboardDetails kind={kind} onKind={setKind} type={type} stamp={data}
+          catLabel={(k) => categories.find((c) => c.key === k)?.label ?? k} />
       </div>
 
     <Card title="Shorts vs long videos" info="video_type" kind="measured">
@@ -64,7 +72,7 @@ export default function Dashboard() {
         <Card title="Top opportunities" info="opportunity_score" kind="estimated" className="lg:col-span-3">
           {topOpportunities.length ? (
             <table className="w-full text-left text-xs">
-              <thead className="text-slate-500"><tr><th className="py-1">Topic</th><th>Score</th><th>Conf.<Info term="confidence" /></th><th>Status</th><th>Videos</th></tr></thead>
+              <thead className="text-slate-500"><tr><th className="py-1">Topic</th><th>Score</th><th>Conf.<Info term="confidence" /></th><th>Status</th><th>Videos</th><th>Shorts / Long</th></tr></thead>
               <tbody>
                 {topOpportunities.map((t) => (
                   <tr key={t.id} className="border-t border-line">
@@ -78,7 +86,7 @@ export default function Dashboard() {
                     </td>
                     <td className={t.confidence < 0.4 ? 'text-yellow-400' : 'text-slate-300'}>{Math.round(t.confidence * 100)}%</td>
                     <td><Direction direction={t.direction} /> <StatusBadge status={t.status} /></td>
-                    <td>{t.videoCount}</td>
+                    <td>{t.videoCount}</td><td className="whitespace-nowrap">{t.shortCount == null ? '—' : `${t.shortCount} / ${t.longCount}`}</td>
                   </tr>
                 ))}
               </tbody>

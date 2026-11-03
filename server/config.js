@@ -16,7 +16,7 @@ export const config = {
 
 // youtubeCategoryIds: YouTube's own category IDs used for mostPopular charts.
 // Categories with no good YouTube equivalent rely on keyword search instead.
-export const CATEGORIES = [
+export const DEFAULT_CATEGORIES= [
   { key: 'tech_ai',       label: 'Technology and AI',    youtubeCategoryIds: ['28'], queries: ['artificial intelligence', 'AI breakthrough'] },
   { key: 'business',      label: 'Business',             youtubeCategoryIds: [],     queries: ['business news', 'startup company'] },
   { key: 'finance',       label: 'Finance',              youtubeCategoryIds: [],     queries: ['stock market', 'economy inflation'] },
@@ -28,3 +28,7 @@ export const CATEGORIES = [
   { key: 'sports',        label: 'Sports',               youtubeCategoryIds: ['17'], queries: ['sports highlights'] },
   { key: 'nature',        label: 'Nature and exploration', youtubeCategoryIds: [],   queries: ['nature documentary', 'wildlife exploration'] },
 ];
+
+// Live list. Edited in Settings and mutated in place, so every importer sees the change.
+export const CATEGORIES = DEFAULT_CATEGORIES.map((c) => ({ ...c }));
+export const setCategories = (list) => CATEGORIES.splice(0, CATEGORIES.length, ...list);

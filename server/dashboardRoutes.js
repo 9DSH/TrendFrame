@@ -5,6 +5,12 @@ import { latestTopics } from './services/topicQueries.js';
 import { parseMeta } from './services/analysis.js';
 import { TYPE_SQL, TYPE_FILTER_SQL, classifyVideo, normalizeType } from './services/videoType.js';
 
+
+
+const DETAIL_TOPIC_CAP = 100;
+const DETAIL_VIDEOS_PER_TOPIC = 15;
+
+
 const router = Router();
 const wrap = (fn) => (req, res) => {
   try { res.json(fn(req)); }
@@ -102,24 +108,76 @@ router.get('/dashboard', wrap((req) => {
   return { videos, summary, typeSplit, categories, topOpportunities, growth, scoreTrend, recentDiscoveries, lastRun };
 }));
 
+router.get('/dashboard/details', wrap((req) => {
+  const kind = String(req.query.kind || 'discovered');
+  const type = normalizeType(req.query.type);
+  const shortMax = getSetting('short_max_seconds');
+  const bind = (extra = {}) => ({ vtype: type, shortMax, ...extra });
+  const LATEST = 'JOIN video_snapshots s ON s.id = (SELECT id FROM video_snapshots WHERE video_id = v.id ORDER BY captured_at DESC LIMIT 1)';
+  const cols = `v.id, v.title, v.url, v.published_at, v.duration_seconds, ${TYPE_SQL()} AS video_type,
+                c.title AS channel_title, s.view_count, s.views_gained, s.views_per_hour, s.velocity_basis`;
+
+  if (kind === 'monitored') {
+    const days = getSetting('tracking_window_days');
+    const where = `v.published_at >= @since AND ${TYPE_FILTER_SQL()}`;
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM videos v WHERE ${where}`).get(bind({ since: daysAgo(days) })).n;
+    const videos = db.prepare(`SELECT ${cols} FROM videos v JOIN channels c ON c.id = v.channel_id ${LATEST}
+      WHERE ${where} ORDER BY s.view_count DESC LIMIT 200`).all(bind({ since: daysAgo(days) }));
+    return { kind, videos, total, trackingDays: days };
+  }
+
+  const hiScore = getSetting('high_opportunity_score');
+  const hiConf = getSetting('high_opportunity_min_confidence');
+  const pred = {
+    discovered: () => true,
+    emerging: (t) => t.status === 'emerging',
+    growing: (t) => t.status === 'growing',
+    high: (t) => t.score >= hiScore && t.confidence >= hiConf,
+  }[kind];
+  if (!pred) throw err(400, `Unknown detail kind: ${kind}`);
+
+  const rows = db.prepare(`SELECT tv.topic_id, ${cols}
+    FROM topic_videos tv JOIN videos v ON v.id = tv.video_id JOIN channels c ON c.id = v.channel_id ${LATEST}
+    WHERE ${TYPE_FILTER_SQL()} ORDER BY s.view_count DESC`).all(bind());
+  const byTopic = new Map();
+  for (const { topic_id, ...v } of rows) {
+    if (!byTopic.has(topic_id)) byTopic.set(topic_id, []);
+    byTopic.get(topic_id).push(v);
+  }
+
+  const matching = latestTopics().filter(pred).filter((t) => !type || byTopic.has(t.id)).sort((a, b) => b.score - a.score);
+  const topics = matching.slice(0, DETAIL_TOPIC_CAP).map((t) => {
+    const vids = byTopic.get(t.id) ?? [];
+    return { ...t, matchingVideos: vids.length, videos: vids.slice(0, DETAIL_VIDEOS_PER_TOPIC) };
+  });
+  return {
+    kind, topics, totalTopics: matching.length, videosPerTopic: DETAIL_VIDEOS_PER_TOPIC,
+    thresholds: kind === 'high' ? { score: hiScore, confidence: hiConf } : null,
+  };
+}));
+
 router.get('/topics/:id/analytics', wrap((req) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) throw err(400, 'Invalid topic id');
   const topic = db.prepare('SELECT id, name, category, keywords FROM topics WHERE id = ?').get(id);
   if (!topic) throw err(404, 'Topic not found');
   const shortMax = getSetting('short_max_seconds');
-
-  const videos = db.prepare(`
+  const type = normalizeType(req.query.type);
+  const allVideos = db.prepare(`
     SELECT v.id, v.title, v.published_at, v.duration_seconds, v.channel_id, c.title AS channel_title, c.subscriber_count
     FROM topic_videos tv JOIN videos v ON v.id = tv.video_id JOIN channels c ON c.id = v.channel_id
     WHERE tv.topic_id = ?`).all(id);
+  const videos = type ? allVideos.filter((v) => classifyVideo(v.duration_seconds, shortMax) === type) : allVideos;
   const byVideo = new Map(videos.map((v) => [v.id, v]));
-  const snaps = db.prepare(`
+
+  const allSnaps = db.prepare(`
     SELECT s.video_id, s.run_id, s.captured_at, s.view_count, s.like_count, s.comment_count,
            s.views_gained, s.views_per_hour, s.velocity_basis
     FROM video_snapshots s JOIN topic_videos tv ON tv.video_id = s.video_id
     WHERE tv.topic_id = ? ORDER BY s.captured_at`).all(id);
-
+  const latestAll = new Map();
+  for (const s of allSnaps) latestAll.set(s.video_id, s);
+  const snaps = type ? allSnaps.filter((s) => byVideo.has(s.video_id)) : allSnaps;
   const latest = new Map();
   for (const s of snaps) latest.set(s.video_id, s);
   const runKey = (s) => s.run_id ?? s.captured_at;
@@ -191,10 +249,10 @@ router.get('/topics/:id/analytics', wrap((req) => {
 
   // ---- Shorts vs long inside this topic ----
   const split = {};
-  for (const v of videos) {
+  for (const v of allVideos) {
     const t = classifyVideo(v.duration_seconds, shortMax);
     const e = (split[t] ??= { type: t, videos: 0, views: 0 });
-    e.videos++; e.views += latest.get(v.id)?.view_count ?? 0;
+    e.videos++; e.views += latestAll.get(v.id)?.view_count ?? 0;
   }
   const typeSplit = ['short', 'long', 'unknown'].filter((t) => split[t])
     .map((t) => ({ ...split[t], avgViews: Math.round(split[t].views / split[t].videos) }));
@@ -242,7 +300,7 @@ router.get('/topics/:id/analytics', wrap((req) => {
 
   return {
     topic: { id: topic.id, name: topic.name, category: topic.category },
-    meta: { snapshots: snaps.length, collections: collections.length },
+    meta: { snapshots: snaps.length, collections: collections.length, type },
     collections, viewSeries, publication, channels, typeSplit, sizeBuckets, history, related: compare,
   };
 }));

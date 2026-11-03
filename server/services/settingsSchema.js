@@ -96,6 +96,8 @@ export function validateSettingsPatch(patch) {
   const out = {};
   for (const [k, v] of Object.entries(patch)) {
     if (k === 'scoring_weights') throw bad('Use PUT /api/scoring/weights');
+    if (k === 'categories_config') throw bad('Use PUT /api/categories');
+    if (k.startsWith('schedule_')) throw bad('Use PUT /api/schedule');
     if (k === P) { out[k] = validateParams(v); continue; }
     if (!(k in DEFAULT_SETTINGS)) throw bad(`Unknown setting: ${k}`);
     const f = TOP.get(k);

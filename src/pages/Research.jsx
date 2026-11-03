@@ -6,6 +6,7 @@ import TopicPicker from '../components/TopicPicker.jsx';
 import { BasisBadge, ClaimList } from '../components/ai.jsx';
 import { Card, Empty, Notice, Page, btnGhost, btnPrimary } from '../components/ui.jsx';
 import { dateTime, growthPct, num, short } from '../utils/format.js';
+import SaveProjectButton from '../components/SaveProjectButton.jsx';
 
 const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
@@ -43,6 +44,7 @@ export default function Research() {
         </button>
         {research && <Link to={`/ideas/${id}`} className={btnGhost}>Animation ideas →</Link>}
         <Link to={`/analytics/${id}`} className={btnGhost}>Analytics</Link>
+        <SaveProjectButton topicId={Number(id)} />
         {job.running && <span className="text-sm text-accent">Working: {job.step}…</span>}
         {status && <span className="ml-auto text-xs text-slate-500">model: {status.researchModel} · uses web search, which OpenAI bills per call</span>}
       </div>

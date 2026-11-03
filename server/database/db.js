@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
-import { config, CATEGORIES } from '../config.js';
+import { config, CATEGORIES, DEFAULT_CATEGORIES, setCategories } from '../config.js';
 import { SCHEMA } from './schema.js';
 import { DEFAULT_PARAMS } from '../services/scoring.js';
 
@@ -39,6 +39,10 @@ export const DEFAULT_SETTINGS = {
   high_opportunity_score: 65,
   high_opportunity_min_confidence: 0.4,
   scoring_params: DEFAULT_PARAMS,
+  categories_config: DEFAULT_CATEGORIES,
+  schedule_enabled: false,
+  schedule_times: ['08:00'],
+  schedule_catch_up: true,
   
 };
 
@@ -67,3 +71,6 @@ export const getScoringParams = () => ({ ...DEFAULT_PARAMS, ...(getSetting('scor
 // Seed defaults without overwriting user changes
 const seed = db.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
 for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) seed.run(k, JSON.stringify(v), nowIso());
+
+const savedCategories = getSetting('categories_config');
+if (Array.isArray(savedCategories) && savedCategories.length) setCategories(savedCategories);

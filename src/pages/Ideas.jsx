@@ -7,6 +7,7 @@ import { BASIS, BasisBadge } from '../components/ai.jsx';
 import { Card, Empty, Notice, Page, btnGhost, btnPrimary } from '../components/ui.jsx';
 import { conceptToMarkdown } from '../utils/conceptMarkdown.js';
 import { dateTime, trunc } from '../utils/format.js';
+import SaveProjectButton from '../components/SaveProjectButton.jsx';
 
 const Section = ({ title, children }) => (
   <div><h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>{children}</div>
@@ -86,7 +87,7 @@ export default function Ideas() {
           </div>
 
           <Card title={c.title}
-            right={<button className={btnGhost} onClick={copy}>{copied ? 'Copied' : 'Copy as Markdown'}</button>}>
+          right={<div className="flex items-center gap-2"><SaveProjectButton topicId={Number(id)} ideaId={c.id} label="Save this concept" /><button className={btnGhost} onClick={copy}>{copied ? 'Copied' : 'Copy as Markdown'}</button></div>}>
             <div className="space-y-4">
               <p className="text-[11px] text-slate-500">
                 Scene tags: {Object.keys(BASIS).map((k) => <span key={k} className="mr-1 inline-block"><BasisBadge status={k} /></span>)}

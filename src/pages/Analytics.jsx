@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts';
 import { api } from '../services/api.js';
-import { btnGhost, TypeBadge, Card, Direction, Empty, KindTag, Notice, Page, Stat, StatusBadge, inputCls } from '../components/ui.jsx';
+import { btnGhost, TypeSelect,TypeBadge, Card, Direction, Empty, KindTag, Notice, Page, Stat, StatusBadge, inputCls } from '../components/ui.jsx';
 import { Chart, axis, barCursor, gridProps, legendProps, tooltipProps } from '../components/charts.jsx';
 import { COLORS, METRICS, SERIES, dateTime, dayLabel, growthPct, num, pct, short, trunc } from '../utils/format.js';
 import Info from '../components/Info.jsx';
 import ScopeBadge from '../components/ScopeBadge.jsx';
+import SaveProjectButton from '../components/SaveProjectButton.jsx';
 
 const NEED_TWO = 'Needs at least two collections that include this topic\'s videos.';
 
@@ -18,6 +19,7 @@ export default function Analytics() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [vtype, setVtype] = useState('');
 
   useEffect(() => {
     api.topics({}).then((list) => {
@@ -30,12 +32,12 @@ export default function Analytics() {
     if (!id) return undefined;
     let alive = true;
     setLoading(true);
-    Promise.all([api.topic(id), api.topicAnalytics(id)])
+    Promise.all([api.topic(id), api.topicAnalytics(id, vtype)])
       .then(([d, a]) => { if (alive) { setDetail(d); setData(a); setError(''); } })
       .catch((e) => alive && setError(e.message))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [id]);
+  }, [id, vtype]);
 
   const picker = (
     <select className={`${inputCls} w-72`} value={id ?? ''} onChange={(e) => navigate(`/analytics/${e.target.value}`)}>
@@ -54,12 +56,13 @@ export default function Analytics() {
   const topChannels = data.channels.slice(0, 8).map((x) => ({ ...x, label: trunc(x.title, 22) }));
   const contributions = c ? Object.keys(METRICS).map((k) => ({ name: METRICS[k], points: c.contributions[k].points ?? 0, excluded: c.contributions[k].excluded })) : [];
   const compMetric = c?.metrics.competition;
-
+  const vids = detail.videos.filter((v) => !vtype || v.video_type === vtype);
+  
   return (
-    <Page title={detail.topic.name} subtitle={`Detailed analytics · ${data.meta.snapshots} snapshots in ${data.meta.collections} collections${loading ? ' · updating…' : ''}`} right={<div className="flex items-center gap-2"><Link to={`/research/${id}`} className={btnGhost}>AI research →</Link>{picker}</div>}>
+    <Page title={detail.topic.name} subtitle={`Detailed analytics · ${data.meta.snapshots} snapshots in ${data.meta.collections} collections${loading ? ' · updating…' : ''}`} right={<div className="flex items-center gap-2"><TypeSelect value={vtype} onChange={setVtype} title="Limits the charts, channel table and video list on this page to one video type" /><SaveProjectButton topicId={Number(id)} /><Link to={`/research/${id}`} className={btnGhost}>AI research →</Link>{picker}</div>}>
       {error && <Notice>{error}</Notice>}
       <ScopeBadge />
-
+        {vtype && <Notice tone="warn">Showing {vtype === 'short' ? 'Shorts' : 'long videos'} only in the charts and tables. The score tiles and score history describe the whole topic, because the score is computed from the analysis scope (Settings).</Notice>}
       {s && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
           <Stat label="Opportunity score" info="opportunity_score" value={s.score.toFixed(1)} sub={`confidence ${Math.round(s.confidence * 100)}%`} tone="text-accent" />
@@ -282,17 +285,18 @@ export default function Analytics() {
           <Card title="Videos in this topic" kind="measured">
             <div className="max-h-72 overflow-auto">
               <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 bg-panel text-slate-500"><tr><th className="py-1">Video</th><th>Views</th><th>Views/h</th></tr></thead>
+                <thead className="sticky top-0 bg-panel text-slate-500"><tr><th className="py-1">Video</th><th>Type</th><th>Views</th><th>Views/h</th></tr></thead>
                 <tbody>
-                  {detail.videos.slice(0, 15).map((v) => (
+                  {vids.slice(0, 15).map((v) => (
                     <tr key={v.id} className="border-t border-line">
                       <td className="max-w-[260px] py-1 pr-2"><a className="hover:text-accent" href={v.url} target="_blank" rel="noreferrer">{trunc(v.title, 70)}</a>
                         <div className="text-[10px] text-slate-500">{v.channel_title}</div></td>
-                        <TypeBadge type={v.video_type} />
+                      <td className="pr-2"><TypeBadge type={v.video_type} /></td>
                       <td>{num(v.view_count)}</td>
                       <td>{num(v.views_per_hour)} <KindTag kind={v.velocity_basis === 'snapshot_delta' ? 'measured' : 'estimated'} /></td>
                     </tr>
                   ))}
+                  {!vids.length && <tr><td colSpan="4" className="py-3 text-center text-slate-500">No videos of this type in the topic.</td></tr>}
                 </tbody>
               </table>
             </div>

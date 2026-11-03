@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../services/api.js';
 import Info from '../components/Info.jsx';
 import ScopeBadge from '../components/ScopeBadge.jsx';
+import { TypeBadge, TypeSelect } from '../components/ui.jsx';
 
 const nf = new Intl.NumberFormat('en-US');
 const STATUS = {
@@ -35,7 +36,7 @@ const input = 'rounded border border-line bg-bg px-2 py-1 text-sm';
 export default function Analysis() {
   const [topics, setTopics] = useState([]);
   const [cats, setCats] = useState([]);
-  const [filters, setFilters] = useState({ q: '', category: '', status: '', flag: '', sort: 'score' });
+  const [filters, setFilters] = useState({ q: '', category: '', status: '', flag: '', type: '', sort: 'score' });
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [weights, setWeights] = useState(null);
@@ -139,6 +140,7 @@ export default function Analysis() {
           <select className={input} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
             <option value="">All statuses</option>{Object.entries(STATUS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}
           </select>
+             <TypeSelect value={filters.type} onChange={(type) => setFilters({ ...filters, type })} title="Topics that contain at least one video of this type" />
           <select className={input} value={filters.flag} onChange={(e) => setFilters({ ...filters, flag: e.target.value })}>
             <option value="">Any flag</option>{Object.entries(FLAGS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
@@ -151,7 +153,7 @@ export default function Analysis() {
           <table className="w-full text-left text-xs">
             <thead className="text-slate-500">
               <tr><th className="py-1">Topic</th><th>Category</th><th>Score</th><th>Confidence<Info term="confidence" /></th><th>Status</th>
-                <th title="Growth relative to what is expected for videos of that age">Growth</th><th>Videos</th><th>Channels</th><th>Competition</th><th>Flags</th></tr>
+                <th title="Growth relative to what is expected for videos of that age">Growth</th><th>Videos</th><th>Channels</th><th>Shorts / Long<Info term="video_type" /></th><th>Competition</th><th>Flags</th></tr>
             </thead>
             <tbody>
               {topics.map((t) => (
@@ -166,11 +168,11 @@ export default function Analysis() {
                   <td><Badge status={t.status} /></td>
                   <td className={t.growthRate == null ? '' : t.growthRate >= 0 ? 'text-up' : 'text-down'}>
                     {growth(t.growthRate)} {t.momentumBasis === 'publication_proxy' && <span className="text-[10px] text-accent2">proxy</span>}</td>
-                  <td>{t.videoCount}</td><td>{t.channelCount}</td><td className="capitalize">{t.competitionLevel}</td>
+                  <td>{t.videoCount}</td>                  <td className="whitespace-nowrap">{t.shortCount == null ? '—' : `${t.shortCount} / ${t.longCount}`}</td><td className="capitalize">{t.competitionLevel}</td>
                   <td className="text-[10px] text-slate-400">{t.flags.map((f) => FLAGS[f]).join(' · ')}</td>
                 </tr>
               ))}
-              {!topics.length && <tr><td colSpan="10" className="py-4 text-center text-slate-500">No topics yet. Collect data, then run the analysis.</td></tr>}
+              {!topics.length && <tr><td colSpan="11" className="py-4 text-center text-slate-500">No topics yet. Collect data, then run the analysis.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -207,11 +209,12 @@ export default function Analysis() {
 
           <h3 className="mb-1 text-xs font-semibold text-slate-300">Videos in this topic</h3>
           <table className="w-full text-left text-xs">
-            <thead className="text-slate-500"><tr><th className="py-1">Video</th><th>Channel</th><th>Match</th><th>Views</th><th>Views/h</th></tr></thead>
+            <thead className="text-slate-500"><tr><th className="py-1">Video</th><th>Type</th><th>Channel</th><th>Match</th><th>Views</th><th>Views/h</th></tr></thead>
             <tbody>
               {detail.videos.map((v) => (
                 <tr key={v.id} className="border-t border-line">
                   <td className="max-w-md py-1 pr-2"><a className="hover:text-accent" href={v.url} target="_blank" rel="noreferrer">{v.title}</a></td>
+                  <td className="pr-2 text-slate-400"><TypeBadge type={v.video_type} /></td>      
                   <td className="pr-2 text-slate-400">{v.channel_title}</td>
                   <td>{(v.similarity * 100).toFixed(0)}%</td>
                   <td>{nf.format(v.view_count)}</td>

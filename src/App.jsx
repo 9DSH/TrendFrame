@@ -10,7 +10,7 @@ import Research from './pages/Research.jsx';
 import Ideas from './pages/Ideas.jsx';
 import Channels from './pages/Channels.jsx';
 import Settings from './pages/Settings.jsx';
-
+import Projects from './pages/Projects.jsx';
 export default function App() {
   return (
     <div className="flex min-h-screen">
@@ -27,6 +27,7 @@ export default function App() {
             <Route path="/ideas/:id?" element={<Ideas />} />
             <Route path="/channels" element={<Channels />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/projects/:id?" element={<Projects />} />
             <Route path="*" element={<p className="text-slate-400">Page not found.</p>} />
           </Routes>
         </div>
