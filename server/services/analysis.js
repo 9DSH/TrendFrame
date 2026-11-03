@@ -5,6 +5,7 @@ import { computeTopicRaw, finalizeScores, applyWeights } from './scoring.js';
 import { labelTopics } from './aiLabeler.js';
 import { db, getSetting, setSetting, getScoringParams } from '../database/db.js';
 import { TYPE_FILTER_SQL, classifyVideo, normalizeType } from './videoType.js';
+import { translatePending } from './translate.js';
 
 const DAY_MS = 86_400_000;
 const MAX_VIDEOS = 3000;
@@ -292,6 +293,11 @@ async function execute() {
   if (videos.length < 2) {
     analysisState.lastResult = { ok: false, message: `Only ${videos.length} ${s.videoType === 'both' ? '' : `${s.videoType === 'short' ? 'Shorts' : 'long'} `}videos in the last ${s.windowDays} days. Run a collection first, or change the video type in Settings.` };
     return;
+  }
+  
+  if (getSetting('translate_titles') && config.openaiKey) {
+    try { step('translating', 'Translating video titles'); await translatePending(300); }
+    catch (e) { analysisState.warnings.push(`Title translation: ${e.message}`); }
   }
 
   step('clustering', `Clustering ${videos.length} videos`);

@@ -7,6 +7,7 @@ import { METRICS } from '../utils/format.js';
 import EnvSettings from '../components/EnvSettings.jsx';
 import CategorySettings from '../components/CategorySettings.jsx';
 import { ScheduleSettings, BackupCard } from '../components/ScheduleSettings.jsx';
+import  TranslateCard from '../components/TranslateCard.jsx';
 
 const GROUPS = [
   { key: 'collection', title: 'Collection', note: 'What is fetched from YouTube. Applies to the next collection.' },
@@ -286,6 +287,8 @@ export default function Settings() {
           [&_.gap-4]:!gap-2
         ">
           <EnvSettings />
+          
+        <TranslateCard />
         </div>
 
         <CategorySettings onSaved={refreshCats} />

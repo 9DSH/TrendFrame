@@ -3,6 +3,7 @@ import { db, getSetting, setSetting } from './database/db.js';
 import { config, CATEGORIES, DEFAULT_CATEGORIES, setCategories } from './config.js';
 import { envView, updateEnv } from './services/envFile.js';
 import * as yt from './services/youtubeClient.js';
+import { translatePending } from './services/translate.js';
 
 const router = Router();
 const bad = (m) => Object.assign(new Error(m), { status: 400 });
@@ -14,6 +15,7 @@ const wrap = (fn) => async (req, res) => {
 // ---------- .env ----------
 router.get('/env', wrap(() => ({ fields: envView() })));
 router.put('/env', wrap((req) => ({ ...updateEnv(req.body), fields: envView() })));
+router.post('/translate', wrap(() => translatePending()));
 
 router.post('/env/test', wrap(async (req) => {
   if (req.body?.target === 'youtube') {

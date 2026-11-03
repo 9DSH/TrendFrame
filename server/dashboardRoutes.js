@@ -114,7 +114,7 @@ router.get('/dashboard/details', wrap((req) => {
   const shortMax = getSetting('short_max_seconds');
   const bind = (extra = {}) => ({ vtype: type, shortMax, ...extra });
   const LATEST = 'JOIN video_snapshots s ON s.id = (SELECT id FROM video_snapshots WHERE video_id = v.id ORDER BY captured_at DESC LIMIT 1)';
-  const cols = `v.id, v.title, v.url, v.published_at, v.duration_seconds, ${TYPE_SQL()} AS video_type,
+  const cols = `v.id, COALESCE(v.title_en, v.title) AS title, v.title AS original_title, v.url, v.published_at, v.duration_seconds, ${TYPE_SQL()} AS video_type,
                 c.title AS channel_title, s.view_count, s.views_gained, s.views_per_hour, s.velocity_basis`;
 
   if (kind === 'monitored') {

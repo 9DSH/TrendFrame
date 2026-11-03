@@ -27,6 +27,7 @@ export const FIELDS = [
   { group: 'analysis', key: 'min_topic_channels', type: 'int', min: 1, max: 20, label: 'Minimum channels per topic', help: 'A topic needs videos from at least this many channels, so one channel\'s series is not mistaken for a trend.' },
   { group: 'analysis', key: 'auto_analyze', type: 'bool', label: 'Analyse after each collection', help: 'Runs the analysis automatically when a collection finishes.' },
   { group: 'analysis', key: 'ai_topic_labeling', type: 'bool', label: 'Name topics with OpenAI', help: 'Sends video titles and channel names to OpenAI to name topics and flag mixed clusters. Needs OPENAI_API_KEY and costs a little per run.' },
+  { group: 'analysis', key: 'translate_titles', type: 'bool', label: 'Translate video titles to English', help: 'After each analysis, new video titles are translated to English with OpenAI (a small cost) and shown instead of the original. The original appears on hover. Needs OPENAI_API_KEY. You can also translate on demand in Settings.' },
 
   // ---- metric inputs ----
   { group: 'metrics', key: 'high_opportunity_score', type: 'int', min: 30, max: 95, label: 'High-opportunity: minimum score', help: 'Dashboard counts a topic as "high-opportunity" at or above this score. Applies immediately.' },

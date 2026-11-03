@@ -232,6 +232,7 @@ function persist(runId, found, sources) {
      VALUES (@id, @channelId, @title, @description, @publishedAt, @categoryId, @primaryCategory, @thumbnailUrl,
        @url, @durationSeconds, @tags, @defaultLanguage, @now, @now)
      ON CONFLICT(id) DO UPDATE SET title = excluded.title, description = excluded.description,
+       title_en = CASE WHEN excluded.title <> videos.title THEN NULL ELSE videos.title_en END,
        category_id = excluded.category_id, thumbnail_url = excluded.thumbnail_url,
        duration_seconds = excluded.duration_seconds, tags = excluded.tags,
        primary_category = COALESCE(videos.primary_category, excluded.primary_category),

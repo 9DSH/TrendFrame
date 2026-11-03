@@ -53,5 +53,6 @@ export const api = {
   schedule: () => request('/schedule'),
   saveSchedule: (body) => request('/schedule', { method: 'PUT', body: JSON.stringify(body) }),
   backup: () => post('/backup'),
+  translate: () => post('/translate'),
 
 };

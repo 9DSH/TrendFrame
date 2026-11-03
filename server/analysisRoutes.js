@@ -61,7 +61,7 @@ router.get('/topics/:id', wrap((req) => {
   const latest = db.prepare('SELECT * FROM trend_scores WHERE topic_id = ? ORDER BY id DESC LIMIT 1').get(id);
   const history = db.prepare('SELECT computed_at, score, confidence, trend_status FROM trend_scores WHERE topic_id = ? ORDER BY id DESC LIMIT 60').all(id).reverse();
   const videos = db.prepare(`
-    SELECT v.id, v.title, v.url, v.published_at, v.duration_seconds, c.id AS channel_id, c.title AS channel_title, c.subscriber_count,
+    SELECT v.id, COALESCE(v.title_en, v.title) AS title, v.title AS original_title, v.url, v.published_at, v.duration_seconds, c.id AS channel_id, c.title AS channel_title, c.subscriber_count,
            tv.similarity, s.view_count, s.views_gained, s.views_per_hour, s.engagement_rate, s.velocity_basis
     FROM topic_videos tv
     JOIN videos v ON v.id = tv.video_id

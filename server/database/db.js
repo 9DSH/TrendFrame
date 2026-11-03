@@ -11,6 +11,8 @@ export const db = new Database(config.dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.exec(SCHEMA);
+if (!db.prepare("SELECT 1 FROM pragma_table_info('videos') WHERE name = 'title_en'").get())
+  db.exec('ALTER TABLE videos ADD COLUMN title_en TEXT');
 
 export const DEFAULT_SETTINGS = {
   regions: ['US'],
@@ -43,6 +45,7 @@ export const DEFAULT_SETTINGS = {
   schedule_enabled: false,
   schedule_times: ['08:00'],
   schedule_catch_up: true,
+  translate_titles: false,
   
 };
 
