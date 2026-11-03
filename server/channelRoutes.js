@@ -19,7 +19,7 @@ router.get('/channels', wrap((req) => {
   const { q, type, sort = 'views' } = req.query;
   const shortMax = getSetting('short_max_seconds');
   const all = db.prepare(`
-    SELECT c.id, c.title, c.subscriber_count, c.country, c.video_count AS channel_total_videos,
+    SELECT c.id, c.title, c.custom_url, c.subscriber_count, c.country, c.video_count AS channel_total_videos,
            COUNT(*) AS videos,
            SUM(t.vtype = 'short') AS shorts, SUM(t.vtype = 'long') AS longs, SUM(t.vtype = 'unknown') AS unknown,
            SUM(CASE WHEN t.vtype = 'short' THEN t.views ELSE 0 END) AS short_views,
@@ -29,7 +29,7 @@ router.get('/channels', wrap((req) => {
           FROM videos v ${LATEST}) t
     JOIN channels c ON c.id = t.channel_id
     GROUP BY c.id`).all({ shortMax }).map((r) => ({
-    id: r.id, title: r.title, subscribers: r.subscriber_count, country: r.country, channelTotalVideos: r.channel_total_videos,
+    id: r.id, title: r.title,customUrl: r.custom_url, subscribers: r.subscriber_count, country: r.country, channelTotalVideos: r.channel_total_videos,
     videos: r.videos, shorts: r.shorts, longs: r.longs, unknown: r.unknown,
     shortViews: r.short_views, longViews: r.long_views, views: r.views, lastPublished: r.last_published,
   }));

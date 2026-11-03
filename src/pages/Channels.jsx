@@ -7,6 +7,10 @@ import { dateTime, num, short } from '../utils/format.js';
 const SORTS = [['views', 'Total views'], ['short_views', 'Shorts views'], ['long_views', 'Long views'], ['shorts', 'Shorts count'],
   ['longs', 'Long count'], ['videos', 'Videos'], ['subscribers', 'Subscribers'], ['name', 'Name']];
 const dur = (s) => (s == null || s <= 0 ? '—' : s < 3600 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : `${(s / 3600).toFixed(1)} h`);
+const channelUrl = (c) => (c.customUrl?.startsWith('@')
+  ? `https://www.youtube.com/${c.customUrl}`
+  : `https://www.youtube.com/channel/${c.id}`);
+const openChannel = (c) => window.open(channelUrl(c), '_blank', 'noopener,noreferrer');
 
 export default function Channels() {
   const [filters, setFilters] = useState({ q: '', type: '', sort: 'views' });
@@ -54,19 +58,25 @@ export default function Channels() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="text-slate-500">
-              <tr><th className="py-1">Channel</th><th>Subscribers</th><th>Shorts</th><th>Shorts views</th><th>Long</th><th>Long views</th><th>Total views</th><th>Shorts share<Info text="Share of this channel's collected views that come from Shorts." /></th><th>Last video</th></tr>
+              <tr><th className="py-1">Channel</th><th>Subscribers</th><th>Shorts</th><th>Shorts views</th><th>Long</th><th>Long views</th><th>Total views</th><th>Shorts share<Info text="Share of this channel's collected views that come from Shorts." /></th><th>Last video</th><th></th></tr>
             </thead>
             <tbody>
               {channels.map((c) => (
-                <tr key={c.id} onClick={() => { setSelected(c.id); setVtype(''); }}
+                <tr key={c.id} onClick={() => openChannel(c)} title="Open channel on YouTube"
                   className={`cursor-pointer border-t border-line hover:bg-bg/60 ${selected === c.id ? 'bg-bg/60' : ''}`}>
-                  <td className="max-w-xs py-1.5 pr-3 text-slate-200">{c.title}</td>
+                  <td className="max-w-xs py-1.5 pr-3 text-slate-200">
+                    <a href={channelUrl(c)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="hover:text-accent">{c.title}</a>
+                  </td>
                   <td className="pr-3">{c.subscribers == null ? 'hidden' : short(c.subscribers)}</td>
                   <td className="pr-3 text-accent2">{c.shorts}</td><td className="pr-3">{short(c.shortViews)}</td>
                   <td className="pr-3 text-accent">{c.longs}</td><td className="pr-3">{short(c.longViews)}</td>
                   <td className="pr-3 font-semibold text-white">{short(c.views)}</td>
                   <td className="pr-3">{c.views ? `${Math.round((c.shortViews / c.views) * 100)}%` : '—'}</td>
-                  <td className="whitespace-nowrap text-slate-400">{dateTime(c.lastPublished)}</td>
+                  <td className="whitespace-nowrap pr-3 text-slate-400">{dateTime(c.lastPublished)}</td>
+                  <td>
+                    <button className="rounded border border-line px-2 py-0.5 text-[11px] text-slate-300 hover:border-accent hover:text-accent"
+                      onClick={(e) => { e.stopPropagation(); setSelected(c.id); setVtype(''); }}>Details</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -77,7 +87,12 @@ export default function Channels() {
 
       {detail && (
         <Card title={detail.channel.title}
-          right={<TypeSelect value={vtype} onChange={setVtype} />}>
+          right={(
+            <div className="flex items-center gap-2">
+              <a className="text-xs text-accent hover:underline" href={`https://www.youtube.com/channel/${detail.channel.id}`} target="_blank" rel="noopener noreferrer">Open on YouTube ↗</a>
+              <TypeSelect value={vtype} onChange={setVtype} />
+            </div>
+          )}>
           <p className="mb-3 text-xs text-slate-400">
             {detail.channel.subscribers == null ? 'Subscribers hidden' : `${short(detail.channel.subscribers)} subscribers`}
             {detail.channel.totalVideos != null && <> · {num(detail.channel.totalVideos)} videos on YouTube (we collected {detail.videos.length}{detail.videos.length >= 300 ? '+' : ''})</>}
