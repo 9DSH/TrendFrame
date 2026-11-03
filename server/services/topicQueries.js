@@ -17,6 +17,8 @@ function shape(r) {
     videoCount: c.stats.videoCount,
     channelCount: c.stats.channelCount,
     totalViews: c.stats.totalViews,
+    shortCount: c.stats.shortCount ?? null, // null for scores computed before video types existed
+    longCount: c.stats.longCount ?? null,
     growthRate: c.metrics.trend_momentum.detail.growthRate,
     momentumBasis: c.metrics.trend_momentum.basis,
     competitionLevel: c.stats.competitionLevel,

@@ -3,6 +3,7 @@ import { db, getSetting } from './database/db.js';
 import { CATEGORIES } from './config.js';
 import { latestTopics } from './services/topicQueries.js';
 import { parseMeta } from './services/analysis.js';
+import { TYPE_SQL, TYPE_FILTER_SQL, classifyVideo, normalizeType } from './services/videoType.js';
 
 const router = Router();
 const wrap = (fn) => (req, res) => {
@@ -15,40 +16,50 @@ const DAY = 86_400_000;
 const daysAgo = (n) => new Date(Date.now() - n * DAY).toISOString();
 const round1 = (v) => Math.round(v * 10) / 10;
 
-// "High opportunity" = score at or above this AND enough confidence. Adjust to taste.
-export const HIGH_OPPORTUNITY_SCORE = 65;
-export const HIGH_OPPORTUNITY_MIN_CONFIDENCE = 0.4;
-
 router.get('/regions', wrap(() =>
   db.prepare('SELECT DISTINCT region_code FROM video_sources ORDER BY region_code').all().map((r) => r.region_code)
 ));
 
-router.get('/dashboard', wrap(() => {
-  const topics = latestTopics();
+router.get('/dashboard', wrap((req) => {
+  const topics = latestTopics(); // topics reflect the analysis scope; the video widgets below follow ?type=
   const trackingDays = getSetting('tracking_window_days');
-  const count = (sql, ...p) => db.prepare(sql).get(...p).n;
+  const type = normalizeType(req.query.type);
+  const shortMax = getSetting('short_max_seconds');
+  const F = TYPE_FILTER_SQL();
+  const bind = (extra = {}) => ({ vtype: type, shortMax, ...extra });
+  const count = (sql, extra) => db.prepare(sql).get(bind(extra)).n;
 
   const videos = {
-    total: count('SELECT COUNT(*) AS n FROM videos'),
-    tracked: count('SELECT COUNT(*) AS n FROM videos WHERE published_at >= ?', daysAgo(trackingDays)),
-    channels: count('SELECT COUNT(*) AS n FROM channels'),
+    total: count(`SELECT COUNT(*) AS n FROM videos v WHERE ${F}`),
+    tracked: count(`SELECT COUNT(*) AS n FROM videos v WHERE v.published_at >= @since AND ${F}`, { since: daysAgo(trackingDays) }),
+    channels: count(`SELECT COUNT(DISTINCT v.channel_id) AS n FROM videos v WHERE ${F}`),
     trackingDays,
   };
 
+  const hiScore = getSetting('high_opportunity_score');
+  const hiConf = getSetting('high_opportunity_min_confidence');
   const summary = {
     discovered: topics.length,
     emerging: topics.filter((t) => t.status === 'emerging').length,
     growing: topics.filter((t) => t.status === 'growing').length,
-    highOpportunity: topics.filter((t) => t.score >= HIGH_OPPORTUNITY_SCORE && t.confidence >= HIGH_OPPORTUNITY_MIN_CONFIDENCE).length,
-    highThreshold: HIGH_OPPORTUNITY_SCORE,
+    highOpportunity: topics.filter((t) => t.score >= hiScore && t.confidence >= hiConf).length,
+    highThreshold: hiScore,
+    highMinConfidence: hiConf,
   };
+
+  // Shorts vs long: always shown side by side, whatever ?type is
+  const typeSplit = db.prepare(`
+    SELECT ${TYPE_SQL()} AS type, COUNT(*) AS videos, COUNT(DISTINCT v.channel_id) AS channels, SUM(s.view_count) AS views
+    FROM videos v JOIN video_snapshots s ON s.id = (SELECT id FROM video_snapshots WHERE video_id = v.id ORDER BY captured_at DESC LIMIT 1)
+    GROUP BY 1`).all({ shortMax })
+    .map((r) => ({ ...r, avgViews: r.videos ? Math.round(r.views / r.videos) : 0 }));
 
   // Trending categories: average topic score (estimate) + measured views gained in the last 7 days
   const gained = new Map(db.prepare(`
     SELECT v.primary_category AS category, SUM(s.views_gained) AS gained
     FROM video_snapshots s JOIN videos v ON v.id = s.video_id
-    WHERE s.views_gained IS NOT NULL AND s.captured_at >= ? GROUP BY v.primary_category`).all(daysAgo(7))
-    .map((r) => [r.category, r.gained]));
+    WHERE s.views_gained IS NOT NULL AND s.captured_at >= @since AND ${F} GROUP BY v.primary_category`)
+    .all(bind({ since: daysAgo(7) })).map((r) => [r.category, r.gained]));
   const categories = CATEGORIES.map(({ key, label }) => {
     const list = topics.filter((t) => t.category === key);
     return {
@@ -64,9 +75,10 @@ router.get('/dashboard', wrap(() => {
 
   // Growth chart 1: measured views gained per (UTC) day across all monitored videos
   const growth = db.prepare(`
-    SELECT substr(captured_at, 1, 10) AS day, SUM(views_gained) AS gained, COUNT(DISTINCT video_id) AS videos
-    FROM video_snapshots WHERE views_gained IS NOT NULL AND captured_at >= ?
-    GROUP BY day ORDER BY day`).all(daysAgo(30));
+    SELECT substr(s.captured_at, 1, 10) AS day, SUM(s.views_gained) AS gained, COUNT(DISTINCT s.video_id) AS videos
+    FROM video_snapshots s JOIN videos v ON v.id = s.video_id
+    WHERE s.views_gained IS NOT NULL AND s.captured_at >= @since AND ${F}
+    GROUP BY day ORDER BY day`).all(bind({ since: daysAgo(30) }));
 
   // Growth chart 2: score history of the top 5 topics (last score of each day)
   const series = byScore.slice(0, 5).map((t, i) => ({ key: `t${i}`, id: t.id, name: t.name }));
@@ -87,7 +99,7 @@ router.get('/dashboard', wrap(() => {
     'SELECT id, started_at, finished_at, status, videos_found, new_videos, quota_used FROM collection_runs ORDER BY id DESC LIMIT 1'
   ).get() ?? null;
 
-  return { videos, summary, categories, topOpportunities, growth, scoreTrend, recentDiscoveries, lastRun };
+  return { videos, summary, typeSplit, categories, topOpportunities, growth, scoreTrend, recentDiscoveries, lastRun };
 }));
 
 router.get('/topics/:id/analytics', wrap((req) => {
@@ -95,9 +107,10 @@ router.get('/topics/:id/analytics', wrap((req) => {
   if (!Number.isInteger(id)) throw err(400, 'Invalid topic id');
   const topic = db.prepare('SELECT id, name, category, keywords FROM topics WHERE id = ?').get(id);
   if (!topic) throw err(404, 'Topic not found');
+  const shortMax = getSetting('short_max_seconds');
 
   const videos = db.prepare(`
-    SELECT v.id, v.title, v.published_at, v.channel_id, c.title AS channel_title, c.subscriber_count
+    SELECT v.id, v.title, v.published_at, v.duration_seconds, v.channel_id, c.title AS channel_title, c.subscriber_count
     FROM topic_videos tv JOIN videos v ON v.id = tv.video_id JOIN channels c ON c.id = v.channel_id
     WHERE tv.topic_id = ?`).all(id);
   const byVideo = new Map(videos.map((v) => [v.id, v]));
@@ -157,20 +170,34 @@ router.get('/topics/:id/analytics', wrap((req) => {
     }
   }
 
-  // ---- channels ----
+  // ---- channels (with Shorts / long split) ----
   const chMap = new Map();
   for (const v of videos) {
     const s = latest.get(v.id);
     if (!s) continue;
-    const c = chMap.get(v.channel_id) ?? { id: v.channel_id, title: v.channel_title, subscribers: v.subscriber_count, videos: 0, views: 0, eng: 0, engViews: 0 };
+    const c = chMap.get(v.channel_id) ?? { id: v.channel_id, title: v.channel_title, subscribers: v.subscriber_count, videos: 0, views: 0, eng: 0, engViews: 0, shorts: 0, longs: 0, shortViews: 0, longViews: 0 };
     c.videos++; c.views += s.view_count;
+    const vt = classifyVideo(v.duration_seconds, shortMax);
+    if (vt === 'short') { c.shorts++; c.shortViews += s.view_count; }
+    else if (vt === 'long') { c.longs++; c.longViews += s.view_count; }
     if (s.like_count != null && s.view_count > 0) { c.eng += s.like_count + (s.comment_count ?? 0); c.engViews += s.view_count; }
     chMap.set(v.channel_id, c);
   }
   const channels = [...chMap.values()].map((c) => ({
     id: c.id, title: c.title, subscribers: c.subscribers, videos: c.videos, views: c.views,
+    shorts: c.shorts, longs: c.longs, shortViews: c.shortViews, longViews: c.longViews,
     viewsPerVideo: Math.round(c.views / c.videos), engagement: c.engViews > 0 ? c.eng / c.engViews : null,
   })).sort((a, b) => b.views - a.views);
+
+  // ---- Shorts vs long inside this topic ----
+  const split = {};
+  for (const v of videos) {
+    const t = classifyVideo(v.duration_seconds, shortMax);
+    const e = (split[t] ??= { type: t, videos: 0, views: 0 });
+    e.videos++; e.views += latest.get(v.id)?.view_count ?? 0;
+  }
+  const typeSplit = ['short', 'long', 'unknown'].filter((t) => split[t])
+    .map((t) => ({ ...split[t], avgViews: Math.round(split[t].views / split[t].videos) }));
 
   // ---- competition: who owns the views, by channel size ----
   const BUCKETS = [['Under 10K', 0, 1e4], ['10K–100K', 1e4, 1e5], ['100K–1M', 1e5, 1e6], ['1M+', 1e6, Infinity]];
@@ -216,7 +243,7 @@ router.get('/topics/:id/analytics', wrap((req) => {
   return {
     topic: { id: topic.id, name: topic.name, category: topic.category },
     meta: { snapshots: snaps.length, collections: collections.length },
-    collections, viewSeries, publication, channels, sizeBuckets, history, related: compare,
+    collections, viewSeries, publication, channels, typeSplit, sizeBuckets, history, related: compare,
   };
 }));
 

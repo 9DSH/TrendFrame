@@ -1,5 +1,5 @@
 import { STATUS } from '../utils/format.js';
-
+import Info from './Info.jsx';
 export const inputCls = 'rounded border border-line bg-bg px-2 py-1 text-sm text-slate-200';
 export const btnPrimary = 'rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50';
 export const btnGhost = 'rounded border border-line px-3 py-1.5 text-sm text-slate-300 hover:bg-bg disabled:opacity-50';
@@ -15,12 +15,12 @@ export function KindTag({ kind }) {
   return <span title={tip} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{label}</span>;
 }
 
-export function Card({ title, kind, right, children, className = '' }) {
+export function Card({ title, kind, info, right, children, className = '' }) {
   return (
     <section className={`rounded-lg border border-line bg-panel p-4 ${className}`}>
       {(title || kind || right) && (
         <div className="mb-3 flex items-center gap-2">
-          {title && <h2 className="text-sm font-semibold text-slate-300">{title}</h2>}
+          {title && <h2 className="text-sm font-semibold text-slate-300">{title}{info && <Info term={info} />}</h2>}
           {kind && <KindTag kind={kind} />}
           {right && <div className="ml-auto">{right}</div>}
         </div>
@@ -30,10 +30,10 @@ export function Card({ title, kind, right, children, className = '' }) {
   );
 }
 
-export function Stat({ label, value, sub, tone = 'text-white' }) {
+export function Stat({ label, value, sub, info, tone = 'text-white' }) {
   return (
     <div className="rounded-lg border border-line bg-panel p-3">
-      <div className="text-xs text-slate-500">{label}</div>
+      <div className="text-xs text-slate-500">{label}{info && <Info term={info} />}</div>
       <div className={`text-2xl font-semibold ${tone}`}>{value}</div>
       {sub && <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>}
     </div>
@@ -52,8 +52,28 @@ export function Direction({ direction }) {
 }
 
 export function Notice({ tone = 'error', children }) {
-  const cls = tone === 'error' ? 'border-down/50 bg-down/10 text-down' : 'border-yellow-400/40 bg-yellow-400/10 text-yellow-300';
+  const cls = tone === 'error' ? 'border-down/50 bg-down/10 text-down'
+    : tone === 'ok' ? 'border-up/40 bg-up/10 text-up'
+    : 'border-yellow-400/40 bg-yellow-400/10 text-yellow-300';
   return <div className={`rounded-lg border p-3 text-sm ${cls}`}>{children}</div>;
+}
+
+const TYPE_OPTIONS = [['', 'All video types'], ['short', 'Shorts only'], ['long', 'Long videos only']];
+export function TypeSelect({ value, onChange, title = 'Filter by video type', className = '' }) {
+  return (
+    <select className={`${inputCls} ${className}`} value={value} title={title} onChange={(e) => onChange(e.target.value)}>
+      {TYPE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
+}
+
+const TYPE_STYLE = {
+  short: ['Short', 'bg-accent2/15 text-accent2'], long: ['Long', 'bg-accent/15 text-accent'], unknown: ['Live / unknown', 'bg-slate-500/20 text-slate-400'],
+};
+
+export function TypeBadge({ type }) {
+  const [label, cls] = TYPE_STYLE[type] ?? TYPE_STYLE.unknown;
+  return <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{label}</span>;
 }
 
 export const Empty = ({ children }) => (

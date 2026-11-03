@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../services/api.js';
+import Info from '../components/Info.jsx';
+import ScopeBadge from '../components/ScopeBadge.jsx';
 
 const nf = new Intl.NumberFormat('en-US');
 const STATUS = {
@@ -110,7 +112,7 @@ export default function Analysis() {
         <Card title="Scoring weights (applied instantly, no re-collection needed)">
           <div className="grid gap-3 sm:grid-cols-4 lg:grid-cols-7">
             {Object.keys(METRICS).map((k) => (
-              <label key={k} className="text-xs text-slate-400">{METRICS[k]}
+              <label key={k} className="text-xs text-slate-400">{METRICS[k]}<Info term={k} />
                 <input type="number" min="0" max="100" className={`${input} mt-1 w-full`} value={weights[k]}
                   onChange={(e) => setWeights({ ...weights, [k]: e.target.value })} />
               </label>
@@ -148,7 +150,7 @@ export default function Analysis() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="text-slate-500">
-              <tr><th className="py-1">Topic</th><th>Category</th><th>Score</th><th>Confidence</th><th>Status</th>
+              <tr><th className="py-1">Topic</th><th>Category</th><th>Score</th><th>Confidence<Info term="confidence" /></th><th>Status</th>
                 <th title="Growth relative to what is expected for videos of that age">Growth</th><th>Videos</th><th>Channels</th><th>Competition</th><th>Flags</th></tr>
             </thead>
             <tbody>
@@ -191,7 +193,7 @@ export default function Analysis() {
                 const m = c.metrics[k]; const w = c.contributions[k];
                 return (
                   <tr key={k} className={`border-t border-line align-top ${w.excluded ? 'opacity-50' : ''}`}>
-                    <td className="py-1 pr-2 text-slate-200">{METRICS[k]}</td>
+                    <td className="py-1 pr-2 text-slate-200">{METRICS[k]}<Info term={k} /></td>
                     <td className={KIND[m.kind]}>{m.kind}{m.basis === 'publication_proxy' ? ' (proxy)' : ''}</td>
                     <td>{m.value == null ? 'n/a' : m.value.toFixed(1)}</td>
                     <td>{w.excluded ? 'excluded' : `${w.effectiveWeight.toFixed(1)}%`}</td>

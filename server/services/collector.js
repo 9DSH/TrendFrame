@@ -4,6 +4,7 @@ import * as yt from './youtubeClient.js';
 import { COSTS, QuotaExceededError, getQuotaStatus } from './quota.js';
 import { computeSnapshotMetrics } from './metrics.js';
 import { startAnalysis } from './analysis.js';
+import { VIDEO_TYPES, matchesType, normalizeType, TYPE_FILTER_SQL } from './videoType.js';
 
 const DAY_MS = 86_400_000;
 const CATEGORY_REFRESH_DAYS = 30;
@@ -44,6 +45,8 @@ export function resolveOptions(input = {}) {
     trackingWindowDays: clamp(pick('trackingWindowDays', 'tracking_window_days'), 1, 90, 30),
     maxTrackedVideos: clamp(pick('maxTrackedVideos', 'max_tracked_videos'), 0, 2000, 500),
     refreshTracked: Boolean(pick('refreshTracked', 'refresh_tracked')),
+    videoType: VIDEO_TYPES.includes(pick('videoType', 'video_type')) ? pick('videoType', 'video_type') : 'both',
+    shortMaxSeconds: clamp(pick('shortMaxSeconds', 'short_max_seconds'), 30, 600, 60),
   };
 }
 
@@ -64,7 +67,8 @@ export function buildPlan(options) {
   let tracked = 0;
   if (options.refreshTracked) {
     const cutoff = new Date(Date.now() - options.trackingWindowDays * DAY_MS).toISOString();
-    const n = db.prepare('SELECT COUNT(*) AS n FROM videos WHERE published_at >= ?').get(cutoff).n;
+    const n = db.prepare(`SELECT COUNT(*) AS n FROM videos v WHERE v.published_at >= @cutoff AND ${TYPE_FILTER_SQL()}`)
+      .get({ cutoff, vtype: normalizeType(options.videoType), shortMax: options.shortMaxSeconds }).n;
     tracked = Math.min(n, options.maxTrackedVideos);
   }
 
@@ -105,6 +109,8 @@ async function execute(runId, plan, options) {
   let result = { newVideos: 0, snapshots: 0 };
 
   const step = (s, m) => { collectionState.step = s; collectionState.message = m; };
+  const keep = (v) => matchesType(v.durationSeconds, options.videoType, options.shortMaxSeconds);
+  let skipped = 0; // videos dropped because of the video-type setting
   // Run one API task; a quota error stops the run, other errors are logged and skipped.
   const safe = async (label, fn) => {
     if (aborted) return;
@@ -130,21 +136,23 @@ async function execute(runId, plan, options) {
         const items = await yt.fetchMostPopular({ regionCode: call.region, videoCategoryId: call.videoCategoryId });
         const fetchedAt = nowIso();
         items.forEach((v, i) => {
+          if (!keep(v)) { skipped++; return; }
           found.set(v.id, { ...v, fetchedAt });
           sources.push({ videoId: v.id, regionCode: call.region, categoryKey: call.category, source: 'most_popular', query: '', rank: i + 1 });
         });
       });
     }
 
-    // 3. Re-snapshot tracked videos (cheap: 1 unit per 50 videos)
+    // 3. Re-snapshot tracked videos (cheap: 1 unit per 50 videos), only of the selected type
     if (options.refreshTracked && options.maxTrackedVideos > 0) {
       step('tracked', 'Refreshing tracked videos');
       await safe('tracked refresh', async () => {
         const cutoff = new Date(Date.now() - options.trackingWindowDays * DAY_MS).toISOString();
         const ids = db.prepare(
-          `SELECT v.id FROM videos v WHERE v.published_at >= ?
-           ORDER BY (SELECT MAX(captured_at) FROM video_snapshots WHERE video_id = v.id) ASC LIMIT ?`
-        ).all(cutoff, options.maxTrackedVideos).map((r) => r.id).filter((id) => !found.has(id));
+          `SELECT v.id FROM videos v WHERE v.published_at >= @cutoff AND ${TYPE_FILTER_SQL()}
+           ORDER BY (SELECT MAX(captured_at) FROM video_snapshots WHERE video_id = v.id) ASC LIMIT @limit`
+        ).all({ cutoff, limit: options.maxTrackedVideos, vtype: normalizeType(options.videoType), shortMax: options.shortMaxSeconds })
+          .map((r) => r.id).filter((id) => !found.has(id));
         if (!ids.length) return;
         const items = await yt.fetchVideosByIds(ids);
         const fetchedAt = nowIso();
@@ -159,17 +167,28 @@ async function execute(runId, plan, options) {
       step('search', `Search: "${call.query}" (${call.region})`);
       await safe(`search ${call.region}/${call.query}`, async () => {
         const publishedAfter = new Date(Date.now() - options.searchWindowDays * DAY_MS).toISOString();
-        const ids = await yt.searchVideoIds({ query: call.query, regionCode: call.region, publishedAfter });
+        const ids = await yt.searchVideoIds({
+          query: call.query, regionCode: call.region, publishedAfter,
+          videoDuration: options.videoType === 'short' ? 'short' : undefined,
+        });
         const newIds = ids.filter((id) => !found.has(id));
         const details = newIds.length ? await yt.fetchVideosByIds(newIds) : [];
         const fetchedAt = nowIso();
         const byId = new Map(details.map((v) => [v.id, v]));
         ids.forEach((id, i) => {
-          if (byId.has(id)) found.set(id, { ...byId.get(id), fetchedAt });
+          const d = byId.get(id);
+          if (d) {
+            if (!keep(d)) { skipped++; return; }
+            found.set(id, { ...d, fetchedAt });
+          }
           if (!found.has(id)) return;
           sources.push({ videoId: id, regionCode: call.region, categoryKey: call.category, source: 'search', query: call.query, rank: i + 1 });
         });
       });
+    }
+
+    if (skipped > 0) {
+      errors.push({ label: 'video type', type: 'info', message: `${skipped} videos skipped because they are not ${options.videoType === 'short' ? 'Shorts' : 'long videos'}.` });
     }
 
     // 5. Save everything we got, even after a quota cut-off

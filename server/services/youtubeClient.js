@@ -93,7 +93,7 @@ export async function fetchMostPopular({ regionCode, videoCategoryId, maxResults
   return (data.items ?? []).map(normalizeVideo).filter(usable);
 }
 
-export async function searchVideoIds({ query, regionCode, publishedAfter, maxResults = 50 }) {
+export async function searchVideoIds({ query, regionCode, publishedAfter, videoDuration, maxResults = 50 }) {
   const data = await call('search.list', {
     part: 'snippet',
     type: 'video',
@@ -101,6 +101,7 @@ export async function searchVideoIds({ query, regionCode, publishedAfter, maxRes
     order: 'viewCount',
     regionCode,
     publishedAfter,
+    videoDuration, // 'short' = under 4 minutes; undefined = any
     maxResults,
   });
   return (data.items ?? []).map((i) => i.id?.videoId).filter(Boolean);

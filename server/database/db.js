@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config, CATEGORIES } from '../config.js';
 import { SCHEMA } from './schema.js';
+import { DEFAULT_PARAMS } from '../services/scoring.js';
 
 fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
 
@@ -31,6 +32,13 @@ export const DEFAULT_SETTINGS = {
   min_topic_channels: 2,
   auto_analyze: true,
   ai_topic_labeling: false,
+  video_type: 'both',              // what to collect: both | short | long
+  short_max_seconds: 60,           // a video <= this length counts as a Short
+  analysis_video_type: 'both',     // what to cluster and score
+  merge_threshold: 0.6,
+  high_opportunity_score: 65,
+  high_opportunity_min_confidence: 0.4,
+  scoring_params: DEFAULT_PARAMS,
   
 };
 
@@ -52,6 +60,9 @@ export function setSetting(key, value) {
 export function getAllSettings() {
   return Object.fromEntries(Object.keys(DEFAULT_SETTINGS).map((k) => [k, getSetting(k)]));
 }
+
+export const getScoringParams = () => ({ ...DEFAULT_PARAMS, ...(getSetting('scoring_params') ?? {}) });
+
 
 // Seed defaults without overwriting user changes
 const seed = db.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');

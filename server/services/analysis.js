@@ -1,12 +1,12 @@
-import { db, getSetting } from '../database/db.js';
 import { config } from '../config.js';
 import { buildVectors, toRawDoc, cosine, centroid, topTerms, sharesEnough, nameFromTerms, slugify } from './text.js';
 import { pairSimilarities, agglomerate } from './clustering.js';
 import { computeTopicRaw, finalizeScores, applyWeights } from './scoring.js';
 import { labelTopics } from './aiLabeler.js';
+import { db, getSetting, setSetting, getScoringParams } from '../database/db.js';
+import { TYPE_FILTER_SQL, classifyVideo, normalizeType } from './videoType.js';
 
 const DAY_MS = 86_400_000;
-const MERGE_THRESHOLD = 0.6;
 const MAX_VIDEOS = 3000;
 const MAX_AI_TOPICS = 24;
 const nowIso = () => new Date().toISOString();
@@ -19,17 +19,18 @@ export function parseMeta(json) {
 }
 
 // ---------- loading ----------
-function loadCorpus(windowDays) {
+function loadCorpus(windowDays, videoType, shortMax) {
   const cutoff = new Date(Date.now() - windowDays * DAY_MS).toISOString();
   const rows = db.prepare(`
     SELECT v.id, v.channel_id, v.title, v.description, v.tags, v.published_at, v.primary_category AS category,
-           c.subscriber_count,
+           v.duration_seconds, c.subscriber_count,
            s.view_count, s.views_per_hour, s.velocity_basis, s.engagement_rate
     FROM videos v
     JOIN channels c ON c.id = v.channel_id
     JOIN video_snapshots s ON s.id = (SELECT id FROM video_snapshots WHERE video_id = v.id ORDER BY captured_at DESC LIMIT 1)
-    WHERE v.published_at >= ? AND v.primary_category IS NOT NULL
-    ORDER BY v.published_at DESC LIMIT ?`).all(cutoff, MAX_VIDEOS);
+    WHERE v.published_at >= @cutoff AND v.primary_category IS NOT NULL AND ${TYPE_FILTER_SQL()}
+    ORDER BY v.published_at DESC LIMIT @limit`)
+    .all({ cutoff, limit: MAX_VIDEOS, vtype: normalizeType(videoType), shortMax });
 
   const snapsBy = new Map();
   for (const s of db.prepare(`SELECT s.video_id, s.captured_at, s.view_count FROM video_snapshots s
@@ -50,6 +51,7 @@ function loadCorpus(windowDays) {
     latest: { viewCount: r.view_count, viewsPerHour: r.views_per_hour, velocityBasis: r.velocity_basis, engagementRate: r.engagement_rate },
     snapshots: snapsBy.get(r.id) ?? [],
     regions: regionsBy.get(r.id) ?? new Set(),
+    videoType: classifyVideo(r.duration_seconds, shortMax),
   }));
 }
 
@@ -77,7 +79,7 @@ function pickWinner(a, b) {
   return a.members.length >= b.members.length ? [a, b] : [b, a];
 }
 
-function mergeSimilar(topics, videos, df) {
+function mergeSimilar(topics, videos, df, threshold)  {
   const list = [...topics];
   let changed = true;
   while (changed) {
@@ -86,7 +88,7 @@ function mergeSimilar(topics, videos, df) {
       for (let b = a + 1; b < list.length; b++) {
         const A = list[a], B = list[b];
         if (A.category !== B.category) continue;
-        if (cosine(A.centroid, B.centroid) < MERGE_THRESHOLD || !sharesEnough(A.core, B.core, df)) continue;
+        if (cosine(A.centroid, B.centroid) < threshold || !sharesEnough(A.core, B.core, df)) continue;
         const [win, lose] = pickWinner(A, B);
         refresh(win, [...win.members, ...lose.members], videos);
         list.splice(list.indexOf(lose), 1);
@@ -162,7 +164,7 @@ function clusterVideos(videos, df, s) {
   }
 
   // 3. merge near-duplicate topics
-  return mergeSimilar(kept, videos, df);
+  return mergeSimilar(kept, videos, df, s.mergeThreshold);
 }
 
 // ---------- persistence ----------
@@ -231,7 +233,7 @@ async function aiLabel() {
 }
 
 // ---------- scoring ----------
-function scoreAll(videos) {
+function scoreAll(videos, params) {
   const byId = new Map(videos.map((v) => [v.id, v]));
   const topicRows = db.prepare('SELECT id, name, category, keywords FROM topics WHERE id IN (SELECT DISTINCT topic_id FROM topic_videos)').all();
   const membersBy = new Map();
@@ -244,8 +246,8 @@ function scoreAll(videos) {
   const inputs = topicRows.filter((r) => membersBy.get(r.id)?.length).map((r) => ({
     id: r.id, topic: { name: r.name, category: r.category, ai: parseMeta(r.keywords).ai }, members: membersBy.get(r.id),
   }));
-  const raws = inputs.map((t) => computeTopicRaw(t.topic, t.members));
-  const results = finalizeScores(raws, getSetting('scoring_weights'));
+  const raws = inputs.map((t) => computeTopicRaw(t.topic, t.members, Date.now(), params));
+  const results = finalizeScores(raws, getSetting('scoring_weights'), params);
 
   const computedAt = nowIso();
   const ins = db.prepare(`INSERT INTO trend_scores (topic_id, computed_at, score, confidence, trend_status, components, weights)
@@ -276,16 +278,19 @@ async function execute() {
   const s = {
     windowDays: getSetting('analysis_window_days'),
     threshold: getSetting('similarity_threshold'),
+    mergeThreshold: getSetting('merge_threshold'),
     minVideos: getSetting('min_topic_videos'),
     minChannels: getSetting('min_topic_channels'),
     wantsAi: Boolean(getSetting('ai_topic_labeling')),
+    videoType: getSetting('analysis_video_type'),
+    shortMax: getSetting('short_max_seconds'),
   };
   const step = (st, msg) => { analysisState.step = st; analysisState.message = msg; };
 
   step('loading', 'Loading videos and snapshots');
-  const videos = loadCorpus(s.windowDays);
+  const videos = loadCorpus(s.windowDays, s.videoType, s.shortMax);
   if (videos.length < 2) {
-    analysisState.lastResult = { ok: false, message: `Only ${videos.length} videos in the last ${s.windowDays} days. Run a collection first.` };
+    analysisState.lastResult = { ok: false, message: `Only ${videos.length} ${s.videoType === 'both' ? '' : `${s.videoType === 'short' ? 'Shorts' : 'long'} `}videos in the last ${s.windowDays} days. Run a collection first, or change the video type in Settings.` };
     return;
   }
 
@@ -303,7 +308,11 @@ async function execute() {
   }
 
   step('scoring', 'Scoring topics');
-  const scored = scoreAll(videos);
+  const scored = scoreAll(videos, getScoringParams());
+  setSetting('last_analysis_scope', {
+    videoType: s.videoType, windowDays: s.windowDays, shortMaxSeconds: s.shortMax, at: nowIso(),
+  });
+
   analysisState.lastResult = {
     ok: true, videos: videos.length, topics: topics.length, scored,
     seconds: Math.round((Date.now() - t0) / 100) / 10, finishedAt: nowIso(),

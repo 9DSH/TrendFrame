@@ -26,7 +26,12 @@ export const api = {
   topic: (id) => request(`/topics/${id}`),
   weights: () => request('/scoring/weights'),
   saveWeights: (weights) => request('/scoring/weights', { method: 'PUT', body: JSON.stringify({ weights }) }),
-  dashboard: () => request('/dashboard'),
+  dashboard: (type) => request(`/dashboard?${query({ type })}`),
+  // Video types, channels, settings
+  settingsSchema: () => request('/settings/schema'),
+  scope: () => request('/scope'),
+  channels: (params) => request(`/channels?${query(params)}`),
+  channel: (id) => request(`/channels/${id}`),
   regions: () => request('/regions'),
   topicAnalytics: (id) => request(`/topics/${id}/analytics`),
   aiStatus: () => request('/ai/status'),

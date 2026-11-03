@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts';
 import { api } from '../services/api.js';
-import { btnGhost, Card, Direction, Empty, KindTag, Notice, Page, Stat, StatusBadge, inputCls } from '../components/ui.jsx';
+import { btnGhost, TypeBadge, Card, Direction, Empty, KindTag, Notice, Page, Stat, StatusBadge, inputCls } from '../components/ui.jsx';
 import { Chart, axis, barCursor, gridProps, legendProps, tooltipProps } from '../components/charts.jsx';
 import { COLORS, METRICS, SERIES, dateTime, dayLabel, growthPct, num, pct, short, trunc } from '../utils/format.js';
+import Info from '../components/Info.jsx';
+import ScopeBadge from '../components/ScopeBadge.jsx';
 
 const NEED_TWO = 'Needs at least two collections that include this topic\'s videos.';
 
@@ -56,17 +58,30 @@ export default function Analytics() {
   return (
     <Page title={detail.topic.name} subtitle={`Detailed analytics · ${data.meta.snapshots} snapshots in ${data.meta.collections} collections${loading ? ' · updating…' : ''}`} right={<div className="flex items-center gap-2"><Link to={`/research/${id}`} className={btnGhost}>AI research →</Link>{picker}</div>}>
       {error && <Notice>{error}</Notice>}
+      <ScopeBadge />
 
       {s && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-          <Stat label="Opportunity score" value={s.score.toFixed(1)} sub={`confidence ${Math.round(s.confidence * 100)}%`} tone="text-accent" />
-          <Stat label="Trend" value={<StatusBadge status={s.status} />} sub={<>growth {growthPct(c.metrics.trend_momentum.detail.growthRate)}{c.metrics.trend_momentum.basis === 'publication_proxy' ? ' (proxy)' : ''}</>} />
+          <Stat label="Opportunity score" info="opportunity_score" value={s.score.toFixed(1)} sub={`confidence ${Math.round(s.confidence * 100)}%`} tone="text-accent" />
+          <Stat label="Trend" info="status" value={<StatusBadge status={s.status} />} sub={<>growth {growthPct(c.metrics.trend_momentum.detail.growthRate)}{c.metrics.trend_momentum.basis === 'publication_proxy' ? ' (proxy)' : ''}</>} />
           <Stat label="Videos" value={num(c.stats.videoCount)} sub={`${c.stats.spanDays} day span`} />
-          <Stat label="Channels" value={num(c.stats.channelCount)} />
+          <Stat label="Channels" info="cross_channel" value={num(c.stats.channelCount)} />
           <Stat label="Total views" value={short(c.stats.totalViews)} sub="measured" />
-          <Stat label="Competition" value={<span className="capitalize">{c.stats.competitionLevel}</span>} sub="higher = more crowded" />
+          <Stat label="Competition" info="competition" value={<span className="capitalize">{c.stats.competitionLevel}</span>} sub="higher = more crowded" />
+
         </div>
       )}
+
+        <Card title="Shorts vs long videos in this topic" info="video_type" kind="measured">
+        <table className="w-full max-w-xl text-left text-xs">
+          <thead className="text-slate-500"><tr><th className="py-1">Type</th><th>Videos</th><th>Total views</th><th>Avg views / video</th></tr></thead>
+          <tbody>
+            {data.typeSplit.map((r) => (
+              <tr key={r.type} className="border-t border-line"><td className="py-1"><TypeBadge type={r.type} /></td><td>{r.videos}</td><td>{num(r.views)}</td><td>{num(r.avgViews)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Views of the 5 biggest videos over time" kind="measured">
@@ -200,13 +215,15 @@ export default function Analytics() {
       <Card title="Channels in this topic" kind="measured">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="text-slate-500"><tr><th className="py-1">Channel</th><th>Subscribers</th><th>Videos</th><th>Views</th><th>Views / video</th><th>Engagement</th></tr></thead>
+              <thead className="text-slate-500"><tr><th className="py-1">Channel</th><th>Subscribers</th><th>Videos</th><th>Shorts</th><th>Shorts views</th><th>Long</th><th>Long views</th><th>Views</th><th>Views / video</th><th>Engagement</th></tr></thead>
             <tbody>
               {data.channels.map((ch) => (
                 <tr key={ch.id} className="border-t border-line">
                   <td className="py-1 pr-3 text-slate-200">{ch.title}</td>
                   <td>{ch.subscribers == null ? 'hidden / unknown' : short(ch.subscribers)}</td>
-                  <td>{ch.videos}</td><td>{num(ch.views)}</td><td>{num(ch.viewsPerVideo)}</td><td>{pct(ch.engagement)}</td>
+                  <td>{ch.videos}</td><td className="text-accent2">{ch.shorts}</td><td>{short(ch.shortViews)}</td>
+                  <td className="text-accent">{ch.longs}</td><td>{short(ch.longViews)}</td>
+                  <td>{num(ch.views)}</td><td>{num(ch.viewsPerVideo)}</td><td>{pct(ch.engagement)}</td>
                 </tr>
               ))}
             </tbody>
@@ -271,6 +288,7 @@ export default function Analytics() {
                     <tr key={v.id} className="border-t border-line">
                       <td className="max-w-[260px] py-1 pr-2"><a className="hover:text-accent" href={v.url} target="_blank" rel="noreferrer">{trunc(v.title, 70)}</a>
                         <div className="text-[10px] text-slate-500">{v.channel_title}</div></td>
+                        <TypeBadge type={v.video_type} />
                       <td>{num(v.view_count)}</td>
                       <td>{num(v.views_per_hour)} <KindTag kind={v.velocity_basis === 'snapshot_delta' ? 'measured' : 'estimated'} /></td>
                     </tr>

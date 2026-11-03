@@ -7,14 +7,22 @@ export const METRIC_KEYS = [
   'trend_momentum', 'view_velocity', 'engagement', 'cross_channel', 'competition', 'long_term', 'animation_potential',
 ];
 
-// ASSUMPTION: typical cumulative views grow like age^0.6 (fast early, slowing later).
-export const DECAY_EXPONENT = 0.6;
-export const MIN_PAIR_GAP_HOURS = 3;
-export const MIN_BASE_AGE_HOURS = 2;
-export const THRESHOLDS = {
-  declining: 0.7, growing: 1.5, emergingMaxAgeDays: 5, saturatedMinVideos: 10, saturatedCompetition: 35,
+/** Tunable metric inputs (editable in Settings). */
+export const DEFAULT_PARAMS = {
+  decay_exponent: 0.6,          // ASSUMPTION: typical cumulative views grow like age^0.6
+  min_pair_gap_hours: 3,
+  min_base_age_hours: 2,
+  declining_ratio: 0.7,
+  growing_ratio: 1.5,
+  emerging_max_age_days: 5,
+  saturated_min_videos: 10,
+  saturated_competition: 35,
+  big_channel_subs: 1_000_000,
+  velocity_top_n: 5,
+  competition_low_from: 65,
+  competition_medium_from: 40,
 };
-const BIG_CHANNEL_SUBS = 1_000_000;
+export const DECAY_EXPONENT = DEFAULT_PARAMS.decay_exponent;
 
 const CATEGORY_PRIOR = {
   tech_ai: 45, business: 35, finance: 30, geopolitics: 70, history: 80,
@@ -63,24 +71,24 @@ export function percentileRanks(values) {
 }
 
 /**
- * Actual view gain between the latest snapshot and an earlier one (>= 3 h older), compared with the gain
- * an average video of the same age would be expected to make under the age^DECAY_EXPONENT model.
+ * Actual view gain between the latest snapshot and an earlier one (>= min_pair_gap_hours older), compared with the
+ * gain an average video of the same age would be expected to make under the age^decay_exponent model.
  */
-export function growthPair(snapshots, publishedMs) {
+export function growthPair(snapshots, publishedMs, p = DEFAULT_PARAMS) {
   if (!snapshots || snapshots.length < 2) return null;
   const last = snapshots[snapshots.length - 1];
   const lastMs = Date.parse(last.captured_at);
   let prev = null;
   for (let i = snapshots.length - 2; i >= 0; i--) {
-    if ((lastMs - Date.parse(snapshots[i].captured_at)) / H >= MIN_PAIR_GAP_HOURS) { prev = snapshots[i]; break; }
+    if ((lastMs - Date.parse(snapshots[i].captured_at)) / H >= p.min_pair_gap_hours) { prev = snapshots[i]; break; }
   }
   if (!prev) return null;
   const a1 = (Date.parse(prev.captured_at) - publishedMs) / H;
   const a2 = (lastMs - publishedMs) / H;
-  if (!(a1 >= MIN_BASE_AGE_HOURS) || prev.view_count <= 0) return null;
+  if (!(a1 >= p.min_base_age_hours) || prev.view_count <= 0) return null;
   const actual = last.view_count - prev.view_count;
   if (actual < 0) return null; // view correction, not growth
-  const expected = prev.view_count * (Math.pow(a2 / a1, DECAY_EXPONENT) - 1);
+  const expected = prev.view_count * (Math.pow(a2 / a1, p.decay_exponent) - 1);
   if (!(expected > 0)) return null;
   return { actual, expected, hours: a2 - a1 };
 }
@@ -104,19 +112,19 @@ export function applyWeights(metrics, weights) {
   return { score: round1(total), contributions };
 }
 
-export function classifyStatus(s) {
+export function classifyStatus(s, p = DEFAULT_PARAMS) {
   const { ratio, measured, videoCount, channelCount, oldestAgeDays, spanDays, competition, recentVideos } = s;
-  if (measured && ratio <= THRESHOLDS.declining) return 'declining';
-  if (videoCount >= THRESHOLDS.saturatedMinVideos && competition != null &&
-      competition < THRESHOLDS.saturatedCompetition && (!measured || ratio < 1.2)) return 'saturated';
-  if (oldestAgeDays <= THRESHOLDS.emergingMaxAgeDays && channelCount >= 2 && (!measured || ratio >= 1)) return 'emerging';
-  if (measured ? ratio >= THRESHOLDS.growing : ratio >= 2 && recentVideos >= 3) return 'growing';
+  if (measured && ratio <= p.declining_ratio) return 'declining';
+  if (videoCount >= p.saturated_min_videos && competition != null &&
+      competition < p.saturated_competition && (!measured || ratio < 1.2)) return 'saturated';
+  if (oldestAgeDays <= p.emerging_max_age_days && channelCount >= 2 && (!measured || ratio >= 1)) return 'emerging';
+  if (measured ? ratio >= p.growing_ratio : ratio >= 2 && recentVideos >= 3) return 'growing';
   if (spanDays >= 5) return 'sustained';
   return 'unclear';
 }
 
 /** Raw (un-normalised) numbers for one topic. `members` come from analysis.loadCorpus(). */
-export function computeTopicRaw(topic, members, now = Date.now()) {
+export function computeTopicRaw(topic, members, now = Date.now(), p = DEFAULT_PARAMS) {
   const n = members.length;
   const channels = new Set(members.map((m) => m.channelId));
   const regions = new Set();
@@ -125,8 +133,8 @@ export function computeTopicRaw(topic, members, now = Date.now()) {
   // momentum
   let actual = 0, expected = 0, pairs = 0;
   for (const m of members) {
-    const p = growthPair(m.snapshots, Date.parse(m.publishedAt));
-    if (p) { actual += p.actual; expected += p.expected; pairs++; }
+    const pr = growthPair(m.snapshots, Date.parse(m.publishedAt), p);
+    if (pr) { actual += pr.actual; expected += pr.expected; pairs++; }
   }
   const age = (m) => now - Date.parse(m.publishedAt);
   const recentVideos = members.filter((m) => age(m) <= 3 * D).length;
@@ -138,7 +146,7 @@ export function computeTopicRaw(topic, members, now = Date.now()) {
   // velocity
   const vphs = members.map((m) => m.latest.viewsPerHour).filter((v) => v != null).sort((a, b) => b - a);
   const totalVph = vphs.reduce((a, b) => a + b, 0);
-  const velocityRaw = vphs.length ? vphs.slice(0, 5).reduce((a, b) => a + b, 0) : null;
+  const velocityRaw = vphs.length ? vphs.slice(0, p.velocity_top_n).reduce((a, b) => a + b, 0) : null;
   const measuredShare = members.filter((m) => m.latest.velocityBasis === 'snapshot_delta').length / n;
 
   // engagement (views-weighted)
@@ -152,7 +160,7 @@ export function computeTopicRaw(topic, members, now = Date.now()) {
   let dominance = null;
   if (known.length / n >= 0.5) {
     const tv = known.reduce((a, m) => a + m.latest.viewCount, 0);
-    const big = known.filter((m) => m.subscribers >= BIG_CHANNEL_SUBS).reduce((a, m) => a + m.latest.viewCount, 0);
+    const big = known.filter((m) => m.subscribers >= p.big_channel_subs).reduce((a, m) => a + m.latest.viewCount, 0);
     dominance = tv > 0 ? big / tv : 0;
   }
 
@@ -177,9 +185,14 @@ export function computeTopicRaw(topic, members, now = Date.now()) {
     0.15 * Math.min(channels.size / 3, 1) + 0.10 * (known.length / n);
   if (topic.ai?.coherent === false) confidence *= 0.7;
 
+  // Shorts vs long split (members carry videoType from analysis.loadCorpus)
+  const typed = (t) => members.filter((m) => m.videoType === t);
+  const sumViews = (list) => list.reduce((a, m) => a + m.latest.viewCount, 0);
+
   return {
     ratio, momentumBasis, pairs, recentVideos, previousVideos,
-    velocityRaw, measuredShare, engagementRaw, supplyDemandRaw: vphs.length ? totalVph / n : null, dominance,
+    velocityRaw, velocityTopN: Math.min(p.velocity_top_n, vphs.length), measuredShare, engagementRaw,
+    supplyDemandRaw: vphs.length ? totalVph / n : null, dominance,
     crossChannelValue: Math.min(100,
       100 * (1 - Math.exp(-(channels.size - 1) / 3)) * 0.85 + 15 * (clamp(regions.size || 1, 1, 3) - 1) / 2),
     longTermValue: 60 * Math.min(1, spanDays / 14) + 40 * Math.min(1, publishDays / 7),
@@ -189,13 +202,15 @@ export function computeTopicRaw(topic, members, now = Date.now()) {
     stats: {
       videoCount: n, channelCount: channels.size, regionCount: regions.size,
       oldestAgeDays: round1(oldestAgeDays), spanDays: round1(spanDays),
-      totalViews: members.reduce((a, m) => a + m.latest.viewCount, 0),
+      totalViews: sumViews(members),
+      shortCount: typed('short').length, longCount: typed('long').length,
+      shortViews: sumViews(typed('short')), longViews: sumViews(typed('long')),
     },
   };
 }
 
 /** Normalise across topics, build the metric breakdown, apply weights, classify status. */
-export function finalizeScores(raws, weights) {
+export function finalizeScores(raws, weights, p = DEFAULT_PARAMS) {
   const velPct = percentileRanks(raws.map((r) => r.velocityRaw));
   const engPct = percentileRanks(raws.map((r) => r.engagementRaw));
   const sdPct = percentileRanks(raws.map((r) => r.supplyDemandRaw));
@@ -209,13 +224,13 @@ export function finalizeScores(raws, weights) {
       trend_momentum: {
         value: round1(momentumScore(r.ratio)), kind: 'estimated', basis: r.momentumBasis,
         note: measured
-          ? `Measured view gains on ${r.pairs} videos vs. the gain expected for their age (decay exponent ${DECAY_EXPONENT}, an assumption).`
+          ? `Measured view gains on ${r.pairs} videos vs. the gain expected for their age (decay exponent ${p.decay_exponent}, an assumption).`
           : `No usable snapshot pairs yet. Proxy: ${r.recentVideos} videos published in the last 3 days vs ${r.previousVideos} in the 3 days before.`,
         detail: { ratio: round3(r.ratio), growthRate: round3(r.ratio - 1), pairs: r.pairs },
       },
       view_velocity: {
         value: velPct[i] == null ? null : round1(velPct[i]), kind: 'estimated',
-        note: `Top-5 videos ≈ ${Math.round(r.velocityRaw ?? 0).toLocaleString('en-US')} views/hour; ${Math.round(r.measuredShare * 100)}% of videos have a snapshot-based rate. Ranked against other topics.`,
+        note: `Top-${r.velocityTopN} videos ≈ ${Math.round(r.velocityRaw ?? 0).toLocaleString('en-US')} views/hour; ${Math.round(r.measuredShare * 100)}% of videos have a snapshot-based rate. Ranked against other topics.`,
         detail: { viewsPerHour: r.velocityRaw, measuredShare: round3(r.measuredShare) },
       },
       engagement: {
@@ -232,7 +247,7 @@ export function finalizeScores(raws, weights) {
         value: competition == null ? null : round1(competition), kind: 'estimated',
         note: r.dominance == null
           ? 'Demand per video only (subscriber counts incomplete). Higher = less crowded.'
-          : `Demand per video, with ${Math.round(r.dominance * 100)}% of views on channels with 1M+ subscribers. Higher = less crowded.`,
+          : `Demand per video, with ${Math.round(r.dominance * 100)}% of views on channels with ${p.big_channel_subs.toLocaleString('en-US')}+ subscribers. Higher = less crowded.`,
         detail: { demandPerVideo: r.supplyDemandRaw, bigChannelViewShare: r.dominance },
       },
       long_term: {
@@ -249,11 +264,12 @@ export function finalizeScores(raws, weights) {
     const status = classifyStatus({
       ratio: r.ratio, measured, videoCount: r.stats.videoCount, channelCount: r.stats.channelCount,
       oldestAgeDays: r.stats.oldestAgeDays, spanDays: r.stats.spanDays, competition, recentVideos: r.recentVideos,
-    });
-    const competitionLevel = competition == null ? 'unknown' : competition >= 65 ? 'low' : competition >= 40 ? 'medium' : 'high';
+    }, p);
+    const competitionLevel = competition == null ? 'unknown'
+      : competition >= p.competition_low_from ? 'low' : competition >= p.competition_medium_from ? 'medium' : 'high';
 
     const flags = [];
-    if (competition != null && competition >= 65 && (metrics.view_velocity.value ?? 0) >= 50) flags.push('low_competition');
+    if (competition != null && competition >= p.competition_low_from && (metrics.view_velocity.value ?? 0) >= 50) flags.push('low_competition');
     if (r.stats.channelCount >= 3 && metrics.cross_channel.value >= 60) flags.push('cross_channel');
     if (status === 'saturated') flags.push('saturated');
     if (!measured) flags.push('proxy_momentum');

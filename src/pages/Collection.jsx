@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../services/api.js';
+import Info from '../components/Info.jsx';
+import { TypeBadge, TypeSelect } from '../components/ui.jsx';
 
 const nf = new Intl.NumberFormat('en-US');
 const n = (v) => (v == null ? '—' : nf.format(Math.round(v)));
@@ -27,7 +29,7 @@ export default function Collection() {
   const [videos, setVideos] = useState([]);
   const [status, setStatus] = useState({ running: false });
   const [estimate, setEstimate] = useState(null);
-  const [filters, setFilters] = useState({ q: '', category: '', sort: 'velocity' });
+  const [filters, setFilters] = useState({ q: '', category: '', type: '', sort: 'velocity' });
   const [error, setError] = useState('');
   const wasRunning = useRef(false);
 
@@ -47,6 +49,7 @@ export default function Collection() {
           regions: s.regions.join(', '),
           categories: s.categories,
           searchesPerCategory: s.searches_per_category,
+          videoType: s.video_type,
           refreshTracked: s.refresh_tracked,
         });
       } catch (e) { setError(`Cannot reach the API: ${e.message}`); }
@@ -72,6 +75,7 @@ export default function Collection() {
   const body = () => ({
     regions: form.regions.split(',').map((s) => s.trim()).filter(Boolean),
     categories: form.categories,
+    videoType: form.videoType,
     searchesPerCategory: Number(form.searchesPerCategory),
     refreshTracked: form.refreshTracked,
   });
@@ -99,7 +103,7 @@ export default function Collection() {
             ))}
           </div>
         </Card>
-        <Card title="API quota (today, Pacific Time)">
+        <Card title={<>API quota (today, Pacific Time)<Info term="quota" /></>}>
         {quota && (<>
             {quota.exhausted && (
             <p className="mb-2 rounded border border-down/50 bg-down/10 p-2 text-xs text-down">
@@ -136,6 +140,12 @@ export default function Collection() {
               onChange={(e) => setForm({ ...form, searchesPerCategory: e.target.value })}>
               <option value={0}>0 (charts + tracking only, cheapest)</option><option value={1}>1</option><option value={2}>2</option>
             </select>
+
+            <label className="mb-1 block text-xs text-slate-400">Video types to collect<Info term="video_type" /></label>
+            <select className="mb-3 rounded border border-line bg-bg px-2 py-1 text-sm" value={form.videoType}
+              onChange={(e) => setForm({ ...form, videoType: e.target.value })}>
+              <option value="both">Both (Shorts and long)</option><option value="short">Shorts only</option><option value="long">Long videos only</option>
+            </select>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={form.refreshTracked} onChange={(e) => setForm({ ...form, refreshTracked: e.target.checked })} />
               Re-snapshot videos already tracked (builds growth history)
@@ -159,7 +169,7 @@ export default function Collection() {
           </button>
           <button className="rounded border border-line px-3 py-1.5 text-sm" onClick={() => run(async () => setEstimate(await api.estimate(body())))}>Estimate cost</button>
           <button className="rounded border border-line px-3 py-1.5 text-sm"
-            onClick={() => run(() => api.saveSettings({ regions: body().regions, categories: body().categories, searches_per_category: body().searchesPerCategory, refresh_tracked: body().refreshTracked }))}>
+            onClick={() => run(() => api.saveSettings({ regions: body().regions, video_type: body().videoType, categories: body().categories, searches_per_category: body().searchesPerCategory, refresh_tracked: body().refreshTracked }))}>
             Save as defaults
           </button>
           <button className="rounded border border-line px-3 py-1.5 text-sm" onClick={refreshData}>Refresh view</button>
@@ -195,6 +205,7 @@ export default function Collection() {
             <option value="">All categories</option>
             {cfg.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
           </select>
+          <TypeSelect value={filters.type} onChange={(type) => setFilters({ ...filters, type })} />
           <select className="rounded border border-line bg-bg px-2 py-1 text-sm" value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}>
             <option value="velocity">Sort: views/hour</option><option value="views">Sort: views</option>
             <option value="newest">Sort: newest</option><option value="engagement">Sort: engagement</option>
@@ -203,12 +214,13 @@ export default function Collection() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="text-slate-500">
-              <tr><th className="py-1">Video</th><th>Channel</th><th>Views</th><th>Gained</th><th>Views/h <span className="text-accent2">(est.)</span></th><th>Engagement</th><th>Age</th><th>Snaps</th></tr>
+                <tr><th className="py-1">Video</th><th>Type</th><th>Channel</th><th>Views</th><th>Gained<Info term="views_gained" /></th><th>Views/h<Info term="views_per_hour" /></th><th>Engagement<Info term="engagement_rate" /></th><th>Age<Info term="video_age" /></th><th>Snaps<Info term="snapshots" /></th></tr>
             </thead>
             <tbody>
               {videos.map((v) => (
                 <tr key={v.id} className="border-t border-line">
                   <td className="max-w-md py-1 pr-2"><a className="hover:text-accent" href={v.url} target="_blank" rel="noreferrer">{v.title}</a></td>
+                  <td className="pr-2"><TypeBadge type={v.video_type} /></td>
                   <td className="pr-2 text-slate-400">{v.channel_title}</td>
                   <td>{n(v.view_count)}</td>
                   <td className={v.views_gained ? 'text-up' : 'text-slate-500'}>{v.views_gained == null ? '—' : `+${n(v.views_gained)}`}</td>
@@ -216,7 +228,7 @@ export default function Collection() {
                   <td>{pct(v.engagement_rate)}</td><td>{age(v.video_age_hours)}</td><td>{v.snapshot_count}</td>
                 </tr>
               ))}
-              {!videos.length && <tr><td colSpan="8" className="py-4 text-center text-slate-500">No videos yet. Run a collection.</td></tr>}
+              {!videos.length && <tr><td colSpan="9" className="py-4 text-center text-slate-500">No videos yet. Run a collection.</td></tr>}
             </tbody>
           </table>
         </div>

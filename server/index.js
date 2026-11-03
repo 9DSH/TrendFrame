@@ -5,7 +5,7 @@ import routes from './routes.js';
 import analysisRoutes from './analysisRoutes.js';
 import dashboardRoutes from './dashboardRoutes.js';
 import aiRoutes from './aiRoutes.js';
-
+import channelRoutes from './channelRoutes.js';
 
 const app = express();
 app.use(express.json());
@@ -13,6 +13,7 @@ app.use('/api', routes);
 app.use('/api', analysisRoutes);
 app.use('/api', dashboardRoutes);
 app.use('/api', aiRoutes);
+app.use('/api', channelRoutes);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error(err);

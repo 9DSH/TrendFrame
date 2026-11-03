@@ -3,7 +3,8 @@ import { NavLink } from 'react-router-dom';
 const ITEMS = [
   ['/', 'Dashboard', true],
   ['/collection', 'Collection'],
-  ['/scoring', 'Scoring & settings'],
+  ['/scoring', 'Scoring details'],
+  ['/settings', 'Settings'],
   ['/topics', 'Trending topics'],
   ['/analytics', 'Analytics'],
   ['/research', 'AI research'],

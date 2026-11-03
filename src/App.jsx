@@ -8,6 +8,8 @@ import Collection from './pages/Collection.jsx';
 import Analysis from './pages/Analysis.jsx';
 import Research from './pages/Research.jsx';
 import Ideas from './pages/Ideas.jsx';
+import Channels from './pages/Channels.jsx';
+import Settings from './pages/Settings.jsx';
 
 export default function App() {
   return (
@@ -23,6 +25,8 @@ export default function App() {
             <Route path="/analytics/:id?" element={<Analytics />} />
             <Route path="/research/:id?" element={<Research />} />
             <Route path="/ideas/:id?" element={<Ideas />} />
+            <Route path="/channels" element={<Channels />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<p className="text-slate-400">Page not found.</p>} />
           </Routes>
         </div>

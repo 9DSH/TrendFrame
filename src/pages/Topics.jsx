@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api.js';
-import { Card, Direction, Empty, inputCls, Notice, Page, StatusBadge, btnGhost } from '../components/ui.jsx';
+import { Card, TypeSelect, Direction, Empty, inputCls, Notice, Page, StatusBadge, btnGhost } from '../components/ui.jsx';
 import { COMPETITION_ORDER, COMPETITION_STYLE, STATUS, dateTime, growthPct, num } from '../utils/format.js';
+import Info from '../components/Info.jsx';
+import ScopeBadge from '../components/ScopeBadge.jsx';
 
 const COLUMNS = [
   { key: 'name', label: 'Topic', get: (t) => t.name.toLowerCase() },
   { key: 'category', label: 'Category', get: (t) => t.category ?? '' },
-  { key: 'score', label: 'Opportunity', get: (t) => t.score },
-  { key: 'growth', label: 'Growth', get: (t) => t.growthRate ?? -Infinity, tip: 'Measured gain vs. the gain expected for videos of that age. "proxy" = based on publication counts only.' },
-  { key: 'status', label: 'Trend', get: (t) => t.status },
+  { key: 'score', label: 'Opportunity', info: 'opportunity_score', get: (t) => t.score },
+  { key: 'growth', label: 'Growth', info: 'trend_momentum', get: (t) => t.growthRate ?? -Infinity },
+  { key: 'status', label: 'Trend', info: 'status', get: (t) => t.status },
   { key: 'videos', label: 'Videos', get: (t) => t.videoCount },
-  { key: 'channels', label: 'Channels', get: (t) => t.channelCount },
-  { key: 'competition', label: 'Competition', get: (t) => COMPETITION_ORDER[t.competitionLevel] ?? 5 },
+  { key: 'channels', label: 'Channels', info: 'cross_channel', get: (t) => t.channelCount },
+  { key: 'mix', label: 'Shorts / Long', info: 'video_type', get: (t) => t.shortCount ?? -1 },
+  { key: 'competition', label: 'Competition', info: 'competition', get: (t) => COMPETITION_ORDER[t.competitionLevel] ?? 5 },
   { key: 'updated', label: 'Updated', get: (t) => t.computedAt },
 ];
 const PERIODS = [['', 'Any time'], ['1', 'Last 24 h'], ['3', 'Last 3 days'], ['7', 'Last 7 days'], ['14', 'Last 14 days'], ['30', 'Last 30 days']];
@@ -21,7 +24,7 @@ export default function Topics() {
   const navigate = useNavigate();
   const [cfg, setCfg] = useState({ categories: [] });
   const [regions, setRegions] = useState([]);
-  const [filters, setFilters] = useState({ q: '', category: '', status: '', region: '', days: '' });
+  const [filters, setFilters] = useState({ q: '', category: '', status: '', region: '', days: '' , type: ''});
   const [sort, setSort] = useState({ key: 'score', dir: 'desc' });
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -64,6 +67,7 @@ export default function Topics() {
 
   return (
     <Page title="Trending topics" subtitle="Click a column to sort, click a row to open its analytics">
+      <ScopeBadge />
       {error && <Notice>{error}</Notice>}
       <Card>
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -77,10 +81,11 @@ export default function Topics() {
           <select className={inputCls} value={filters.status} onChange={(e) => set({ status: e.target.value })}>
             <option value="">All trend statuses</option>{Object.entries(STATUS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}
           </select>
+          <TypeSelect value={filters.type} onChange={(type) => set({ type })} title="Topics that contain at least one video of this type" />
           <select className={inputCls} value={filters.days} onChange={(e) => set({ days: e.target.value })} title="Topic has a video published within this period">
             {PERIODS.map(([v, l]) => <option key={v} value={v}>{v ? `Active: ${l}` : 'Any date'}</option>)}
           </select>
-          {hasFilters && <button className={btnGhost} onClick={() => setFilters({ q: '', category: '', status: '', region: '', days: '' })}>Clear</button>}
+          {hasFilters && <button className={btnGhost} onClick={() => setFilters({ q: '', category: '', status: '', region: '', days: '', type: '' })}>Clear</button>}
           <span className="ml-auto text-xs text-slate-500">{loading ? 'Loading…' : `${rows.length} topics`}</span>
         </div>
 
@@ -89,8 +94,8 @@ export default function Topics() {
             <thead className="text-slate-500">
               <tr>
                 {COLUMNS.map((c) => (
-                  <th key={c.key} title={c.tip} onClick={() => clickSort(c.key)} className="cursor-pointer select-none whitespace-nowrap py-1.5 pr-3 hover:text-slate-300">
-                    {c.label}{sort.key === c.key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  <th key={c.key} onClick={() => clickSort(c.key)} className="cursor-pointer select-none whitespace-nowrap py-1.5 pr-3 hover:text-slate-300">
+                    {c.label}{c.info && <Info term={c.info} />}{sort.key === c.key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                   </th>
                 ))}
               </tr>
@@ -112,7 +117,9 @@ export default function Topics() {
                   </td>
                   <td className="pr-3 whitespace-nowrap"><Direction direction={t.direction} /> <StatusBadge status={t.status} /></td>
                   <td className="pr-3">{num(t.videoCount)}</td>
+                  <td className="whitespace-nowrap pr-3">{t.shortCount == null ? '—' : `${t.shortCount} / ${t.longCount}`}</td>
                   <td className="pr-3">{num(t.channelCount)}</td>
+                  
                   <td className={`pr-3 capitalize ${COMPETITION_STYLE[t.competitionLevel]}`}>{t.competitionLevel}</td>
                   <td className="whitespace-nowrap text-slate-400">{dateTime(t.computedAt)}</td>
                 </tr>

@@ -4,45 +4,67 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, 
 import { api } from '../services/api.js';
 import { useJobs } from '../hooks/useJobs.js';
 import ActionBar from '../components/ActionBar.jsx';
-import { Card, Direction, Empty, Notice, Page, Stat, StatusBadge } from '../components/ui.jsx';
+import ScopeBadge from '../components/ScopeBadge.jsx'
+import Info from '../components/Info.jsx';
+import { Card, TypeSelect,TypeBadge, Direction, Empty, Notice, Page, Stat, StatusBadge } from '../components/ui.jsx';
 import { Chart, axis, barCursor, gridProps, legendProps, tooltipProps } from '../components/charts.jsx';
 import { COLORS, SERIES, dayLabel, num, short, timeAgo, trunc } from '../utils/format.js';
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [type, setType] = useState('');
 
   const load = useCallback(async () => {
-    try { setData(await api.dashboard()); setError(''); } catch (e) { setError(e.message); }
-  }, []);
+    try { setData(await api.dashboard(type)); setError(''); } catch (e) { setError(e.message); }
+  }, [type]);
   useEffect(() => { load(); }, [load]);
   const jobs = useJobs(load);
 
   if (!data) return <p className="text-slate-400">{error || 'Loading…'}</p>;
-  const { videos, summary, categories, topOpportunities, growth, scoreTrend, recentDiscoveries, lastRun } = data;
+  const { videos, summary, typeSplit, categories, topOpportunities, growth, scoreTrend, recentDiscoveries, lastRun } = data;
   const chartCats = categories.filter((c) => c.avgScore != null).map((c) => ({ ...c, label: trunc(c.label, 22) }));
 
   return (
     <Page title="Dashboard" subtitle={lastRun ? `Last collection #${lastRun.id}: ${lastRun.status}, ${timeAgo(lastRun.started_at)}` : 'No collection yet'}
       right={<ActionBar jobs={jobs} onRefresh={load} />}>
       {error && <Notice>{error}</Notice>}
+        <div className="flex flex-wrap items-center gap-3">
+        <TypeSelect value={type} onChange={setType} title="Applies to the video counts and view-gain charts. Topics follow the analysis scope." />
+        <ScopeBadge />
+      </div>
       {summary.discovered === 0 && (
         <Notice tone="warn">No topics yet. Use <b>Collect now</b>, then <b>Run analysis</b> (it also runs automatically after a collection).</Notice>
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Stat label="Monitored videos" value={num(videos.tracked)} sub={`published in last ${videos.trackingDays} d · ${num(videos.total)} collected`} />
+        <Stat label="Monitored videos" info="monitored" value={num(videos.tracked)} sub={`published in last ${videos.trackingDays} d · ${num(videos.total)} collected`} />
         <Stat label="Discovered topics" value={num(summary.discovered)} sub={`${num(videos.channels)} channels seen`} />
-        <Stat label="Emerging topics" value={num(summary.emerging)} tone="text-accent2" sub={`${num(summary.growing)} rapidly growing`} />
-        <Stat label="High-opportunity" value={num(summary.highOpportunity)} tone="text-up" sub={`score ≥ ${summary.highThreshold}, confidence ≥ 40%`} />
-        <Stat label="Top score" value={topOpportunities[0] ? topOpportunities[0].score.toFixed(1) : '—'} sub={topOpportunities[0] ? trunc(topOpportunities[0].name, 28) : ''} />
+        <Stat label="Emerging topics" info="status_emerging" value={num(summary.emerging)} tone="text-accent2" sub={`${num(summary.growing)} rapidly growing`} />
+        <Stat label="High-opportunity" info="high_opportunity" value={num(summary.highOpportunity)} tone="text-up" sub={`score ≥ ${summary.highThreshold}, confidence ≥ ${Math.round(summary.highMinConfidence * 100)}%`} />
+        <Stat label="Top score" info="opportunity_score" value={topOpportunities[0] ? topOpportunities[0].score.toFixed(1) : '—'} sub={topOpportunities[0] ? trunc(topOpportunities[0].name, 28) : ''} />
       </div>
 
+    <Card title="Shorts vs long videos" info="video_type" kind="measured">
+        {typeSplit.length ? (
+          <table className="w-full max-w-2xl text-left text-xs">
+            <thead className="text-slate-500"><tr><th className="py-1">Type</th><th>Videos</th><th>Channels</th><th>Total views</th><th>Avg views / video</th></tr></thead>
+            <tbody>
+              {['short', 'long', 'unknown'].map((t) => typeSplit.find((r) => r.type === t)).filter(Boolean).map((r) => (
+                <tr key={r.type} className="border-t border-line">
+                  <td className="py-1"><TypeBadge type={r.type} /></td><td>{num(r.videos)}</td><td>{num(r.channels)}</td><td>{short(r.views)}</td><td>{num(r.avgViews)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <Empty>No videos yet.</Empty>}
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card title="Top opportunities" kind="estimated" className="lg:col-span-3">
+        <Card title="Top opportunities" info="opportunity_score" kind="estimated" className="lg:col-span-3">
           {topOpportunities.length ? (
             <table className="w-full text-left text-xs">
-              <thead className="text-slate-500"><tr><th className="py-1">Topic</th><th>Score</th><th>Conf.</th><th>Status</th><th>Videos</th></tr></thead>
+              <thead className="text-slate-500"><tr><th className="py-1">Topic</th><th>Score</th><th>Conf.<Info term="confidence" /></th><th>Status</th><th>Videos</th></tr></thead>
               <tbody>
                 {topOpportunities.map((t) => (
                   <tr key={t.id} className="border-t border-line">
@@ -64,7 +86,7 @@ export default function Dashboard() {
           ) : <Empty>No scored topics yet.</Empty>}
         </Card>
 
-        <Card title="Trending categories" kind="estimated" className="lg:col-span-2">
+        <Card title="Trending categories" kind="estimated" info="trending_categories" className="lg:col-span-2">
           {chartCats.length ? (
             <>
               <Chart height={Math.max(180, chartCats.length * 26)}>
