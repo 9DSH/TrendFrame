@@ -28,6 +28,16 @@ const PROVIDERS = [
     icon: '▶',
     modelFields: false,
   },
+
+  {
+    id: 'pitchapi',
+    title: 'PitchAPI',
+    description: 'Football goal statistics',
+    key: 'PITCHAPI_API_KEY',
+    test: 'pitchapi',
+    icon: '⚽',
+    modelFields: false,
+  },
 ];
 
 export default function EnvSettings() {

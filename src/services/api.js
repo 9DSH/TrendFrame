@@ -1,9 +1,15 @@
 async function request(path, options = {}) {
-  const res = await fetch(`/api${path}`, { headers: { 'Content-Type': 'application/json' }, ...options });
+  let res;
+  try {
+    res = await fetch(`/api${path}`, { headers: { 'Content-Type': 'application/json' }, ...options });
+  } catch (e) {
+    throw new Error(e.name === 'TimeoutError' ? 'The server took too long to answer.' : 'Cannot reach the TrendFrame server. Is it still running?');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
+
 const post = (path, body) => request(path, { method: 'POST', body: JSON.stringify(body || {}) });
 const query = (params) => new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v)));
 
@@ -54,8 +60,9 @@ export const api = {
   saveSchedule: (body) => request('/schedule', { method: 'PUT', body: JSON.stringify(body) }),
   backup: () => post('/backup'),
   translate: () => post('/translate'),
-  footballStatus: () => request('/football/status'), 
-  footballSearch: (q) => request(`/football/search?${query({ q })}`),
-  footballGoals: (id) => request(`/football/matches/${id}/goals`),
-
+  footballStatus: () => request('/football/status'),
+  footballSearchStart: (q) => post('/football/search', { q }),
+  footballSearchStatus: (id) => request(`/football/search/${id}`),
+  footballSearchCancel: (id) => request(`/football/search/${id}`, { method: 'DELETE' }),
+  footballGoals: (id) => request(`/football/matches/${id}/goals`, { signal: AbortSignal.timeout(90_000) }),
 };

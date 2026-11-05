@@ -82,23 +82,38 @@ export async function getMatchDetail(id) {
   if (total != null && goals.length !== total) notes.push(`PitchAPI lists ${goals.length} goal(s), but the final score adds up to ${total}.`);
   return { match, goals, source, warnings: notes };
 }
-
 // ---------- search ----------
+
+const NOOP = { progress() {}, log() {}, cancelled: () => false };
+
+export class SearchCancelled extends Error {
+  constructor() { super('Search cancelled.'); this.name = 'SearchCancelled'; }
+}
+
+/** Stops a search that keeps failing instead of grinding through hundreds of doomed calls. */
+function breaker(limit = 15) {
+  let streak = 0;
+  return { ok() { streak = 0; }, tripped() { return ++streak >= limit; } };
+}
 
 const toResult = (m, player = null) => ({
   id: m.id, date: m.date, league: m.league, season: m.season,
   home: { name: m.home.name }, away: { name: m.away.name }, scoreHome: m.scoreHome, scoreAway: m.scoreAway, player,
 });
 
-export async function searchMatches(rawQuery) {
+export async function searchMatches(rawQuery, ctl = NOOP) {
+  const stop = () => { if (ctl.cancelled()) throw new SearchCancelled(); };
   const q = String(rawQuery ?? '').trim().slice(0, 200);
   const parsed = parseQuery(q);
   if (q.length < 2 || (!parsed.tokens.length && parsed.year == null)) {
     throw httpError(400, 'Type a player, team, opponent, competition or year.');
   }
 
+  ctl.progress('Reading the list of leagues');
   const leagues = await getLeagues();
+  stop();
   if (!leagues.length) throw httpError(502, 'PitchAPI returned no leagues.');
+  ctl.log(`${leagues.length} leagues available`);
 
   const notes = [];
   const comp = findCompetitions(parsed.tokens, leagues);
@@ -123,13 +138,30 @@ export async function searchMatches(rawQuery) {
   }
   if (parsed.year == null) notes.push('No year given, so only the current season of each league was searched.');
 
+  // Stage 1: fixture lists
   let fatal = null;
   let skipped = 0;
+  let done = 0;
+  const brk1 = breaker();
+  ctl.log(`Loading ${wanted.length} league season(s). Finished seasons are cached, so repeat searches are fast.`);
+  ctl.progress('Loading fixture lists', 0, wanted.length);
   const lists = await mapPool(wanted, POOL, async ([lg, season]) => {
-    if (fatal) return [];
-    try { return await seasonMatches(lg, season); }
-    catch (e) { if (isFatal(e)) fatal = e; skipped++; return []; }
+    if (fatal || ctl.cancelled()) return [];
+    try {
+      const r = await seasonMatches(lg, season);
+      brk1.ok();
+      return r;
+    } catch (e) {
+      if (isFatal(e)) fatal = e;
+      else if (brk1.tripped()) fatal = httpError(502, `PitchAPI keeps failing (last error: ${e.message}). The search was stopped.`);
+      skipped++;
+      ctl.log(`${lg.name} ${season}: ${e.message}`);
+      return [];
+    } finally {
+      ctl.progress('Loading fixture lists', ++done, wanted.length);
+    }
   });
+  stop();
   if (fatal) throw fatal;
   if (skipped === wanted.length) throw httpError(502, 'PitchAPI could not be reached. Try again in a moment.');
   if (skipped) notes.push(`${skipped} league season(s) could not be loaded and were left out. Search again to retry them.`);
@@ -143,6 +175,7 @@ export async function searchMatches(rawQuery) {
 
   const candidates = inYear.filter((m) => matchHasTeams(m, groups))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  ctl.log(`${unique.length} matches loaded, ${candidates.length} fit the year, competition and teams`);
 
   if (!playerTokens.length) {
     base.results = candidates.slice(0, MAX_RESULTS).map((m) => toResult(m));
@@ -151,7 +184,7 @@ export async function searchMatches(rawQuery) {
     return base;
   }
 
-  // A player is found through the goals of the candidate games, so those games have to be read.
+  // Stage 2: a player is found through the goals of the candidate games, so those games have to be read.
   const unchecked = candidates.filter((m) => !cacheHas(`goals:${m.id}`)).length;
   if (unchecked > MAX_GOAL_FETCHES) {
     base.tooBroad = true;
@@ -161,11 +194,27 @@ export async function searchMatches(rawQuery) {
   }
 
   let failed = 0;
+  done = 0;
+  const brk2 = breaker();
+  ctl.log(`Checking ${candidates.length} game(s) for scorers (${unchecked} not cached yet)`);
+  ctl.progress('Checking goal scorers', 0, candidates.length);
   const checked = await mapPool(candidates, POOL, async (m) => {
-    if (fatal) return null;
-    try { return { m, goals: (await loadGoals(m.id, m.date)).goals }; }
-    catch (e) { if (isFatal(e)) fatal = e; failed++; return null; }
+    if (fatal || ctl.cancelled()) return null;
+    try {
+      const r = { m, goals: (await loadGoals(m.id, m.date)).goals };
+      brk2.ok();
+      return r;
+    } catch (e) {
+      if (isFatal(e)) fatal = e;
+      else if (brk2.tripped()) fatal = httpError(502, `PitchAPI keeps failing (last error: ${e.message}). The search was stopped.`);
+      failed++;
+      ctl.log(`${m.home.name} v ${m.away.name} (${m.date}): ${e.message}`);
+      return null;
+    } finally {
+      ctl.progress('Checking goal scorers', ++done, candidates.length);
+    }
   });
+  stop();
   if (fatal) throw fatal;
   if (failed) notes.push(`${failed} game(s) could not be checked because PitchAPI returned an error. Search again to retry them.`);
 
@@ -184,6 +233,9 @@ export async function searchMatches(rawQuery) {
 export async function getStatus() {
   const keyConfigured = api.keyConfigured();
   let earliest = null;
-  try { earliest = earliestYear(keyConfigured ? await getLeagues() : cacheGet('leagues') ?? []); } catch { /* shown on the first search */ }
-  return { keyConfigured, provider: 'PitchAPI', earliestYear: earliest };
+  let error = null;
+  if (keyConfigured) {
+    try { earliest = earliestYear(await getLeagues()); } catch (e) { error = e.message; }
+  }
+  return { keyConfigured, provider: 'PitchAPI', earliestYear: earliest, error };
 }

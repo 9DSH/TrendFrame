@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api.js';
-import { Card, Empty, Notice, Page, btnPrimary, inputCls } from '../components/ui.jsx';
+import { Card, Empty, Notice, Page, btnGhost, btnPrimary, inputCls } from '../components/ui.jsx';
 
 const NA = <span className="text-slate-500">Not available</span>;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dateLabel = (d) => (d
   ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
   : '—');
 const score = (m) => `${m.scoreHome ?? '–'}–${m.scoreAway ?? '–'}`;
+const clock = (iso) => new Date(iso).toLocaleTimeString('en-GB');
 
 function interpretation(i) {
   const parts = [];
@@ -42,18 +45,59 @@ function GoalTable({ goals }) {
   );
 }
 
+function Progress({ job, running, now, t0, onCancel }) {
+  const elapsed = Math.max(0, Math.round((now - t0) / 1000));
+  const idle = job ? Math.round((now - Date.parse(job.updatedAt)) / 1000) : 0;
+  const pct = job?.total ? Math.min(100, Math.round((job.done / job.total) * 100)) : null;
+  return (
+    <Card title={running ? 'Searching…' : 'Search log'}
+      right={running && <button type="button" className={btnGhost} onClick={onCancel}>Cancel</button>}>
+      <div className="mb-1 flex items-center gap-2 text-sm text-slate-300">
+        <span className="font-medium text-white">{job?.phase ?? 'Starting'}</span>
+        {job?.total > 0 && <span className="text-xs text-slate-500">{job.done} / {job.total}</span>}
+        <span className="ml-auto text-xs text-slate-500">{elapsed}s</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-bg">
+        {pct == null
+          ? <div className={`h-full w-1/3 rounded-full bg-accent ${running ? 'animate-pulse' : ''}`} />
+          : <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />}
+      </div>
+      {running && idle >= 15 && (
+        <p className="mt-2 text-xs text-yellow-400">No progress for {idle}s. PitchAPI is slow or rate limiting; the server keeps retrying and will stop if it keeps failing.</p>
+      )}
+      {job?.log?.length > 0 && (
+        <ul className="mt-3 max-h-40 space-y-0.5 overflow-auto rounded border border-line bg-bg/50 p-2 text-[11px] text-slate-400">
+          {job.log.map((l, i) => <li key={i}><span className="text-slate-600">{clock(l.t)}</span> {l.msg}</li>)}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export default function Football() {
   const [status, setStatus] = useState(null);
   const [q, setQ] = useState('');
   const [search, setSearch] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [job, setJob] = useState(null);
+  const [t0, setT0] = useState(Date.now());
+  const [now, setNow] = useState(Date.now());
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailError, setDetailError] = useState('');
   const run = useRef(0);
+  const jobId = useRef(null);
 
-  useEffect(() => { api.footballStatus().then(setStatus).catch(() => {}); }, []);
+  useEffect(() => { api.footballStatus().then(setStatus).catch((e) => setStatus({ keyConfigured: true, error: e.message })); }, []);
+
+  useEffect(() => () => { run.current++; if (jobId.current) api.footballSearchCancel(jobId.current).catch(() => {}); }, []);
+
+  useEffect(() => {
+    if (!searching) return undefined;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [searching]);
 
   useEffect(() => {
     if (!selected) return undefined;
@@ -68,26 +112,53 @@ export default function Football() {
     const text = q.trim();
     if (text.length < 2 || searching) return;
     const id = ++run.current;
-    setSearching(true); setError(''); setSelected(null); setDetail(null); setDetailError('');
+    setSearching(true); setError(''); setSelected(null); setDetail(null); setDetailError(''); setSearch(null); setJob(null);
+    setT0(Date.now()); setNow(Date.now());
     try {
-      const r = await api.footballSearch(text);
-      if (id === run.current) setSearch(r);
+      const started = await api.footballSearchStart(text);
+      jobId.current = started.id;
+      setJob(started);
+      let failures = 0;
+      for (;;) {
+        await sleep(700);
+        if (id !== run.current) return;
+        let j;
+        try { j = await api.footballSearchStatus(started.id); failures = 0; }
+        catch (err) {
+          if (++failures >= 4) throw new Error(`Lost contact with the server: ${err.message}`);
+          continue;
+        }
+        if (id !== run.current) return;
+        setJob(j);
+        if (j.state === 'done') { setSearch(j.result); break; }
+        if (j.state === 'failed') throw new Error(j.error || 'The search failed.');
+        if (j.state === 'cancelled') { setError('Search cancelled.'); break; }
+      }
     } catch (err) {
       if (id === run.current) { setError(err.message); setSearch(null); }
     } finally {
-      if (id === run.current) setSearching(false);
+      if (id === run.current) { setSearching(false); jobId.current = null; }
     }
+  };
+
+  const cancel = () => {
+    run.current++;
+    if (jobId.current) api.footballSearchCancel(jobId.current).catch(() => {});
+    jobId.current = null;
+    setSearching(false);
+    setError('Search cancelled.');
   };
 
   const noKey = status && !status.keyConfigured;
 
   return (
     <Page title="Football goals" subtitle="Find a match, then see the available statistics for each of its goals">
-      {noKey && <Notice>PITCHAPI_API_KEY is not set. Add it to <code>.env</code> and restart <code>npm run dev</code>. A free key is available at pitchapi.dev.</Notice>}
+      {noKey && <Notice>No PitchAPI key yet. Add it in <Link className="underline" to="/settings">Settings → Integrations</Link>. A free key is available at pitchapi.dev.</Notice>}
+      {status?.error && !noKey && <Notice>PitchAPI problem: {status.error}</Notice>}
 
       <form onSubmit={submit} className="space-y-1">
         <div className="flex gap-2">
-          <input className={`${inputCls} min-w-0 flex-1`} value={q} onChange={(e) => setQ(e.target.value)} disabled={noKey}
+          <input className={`${inputCls} min-w-0 flex-1`} value={q} onChange={(e) => setQ(e.target.value)} disabled={noKey || searching}
             placeholder="Player, team, opponent, competition, year. For example: Haaland 2024 Manchester City vs Arsenal" />
           <button className={btnPrimary} disabled={noKey || searching || q.trim().length < 2}>{searching ? 'Searching…' : 'Search'}</button>
         </div>
@@ -97,8 +168,8 @@ export default function Football() {
         </p>
       </form>
 
-      {searching && <p className="text-sm text-accent">Searching… the first search for a year downloads fixture lists and can take a minute. Results are cached locally.</p>}
-      {error && <Notice>{error}</Notice>}
+      {error && <Notice tone={error === 'Search cancelled.' ? 'warn' : 'error'}>{error}</Notice>}
+      {(searching || (job && error)) && <Progress job={job} running={searching} now={now} t0={t0} onCancel={cancel} />}
 
       {search && !searching && (
         <Card title={`Matches (${search.total}${search.total > search.results.length && search.results.length ? `, newest ${search.results.length} shown` : ''})`}
@@ -128,7 +199,7 @@ export default function Football() {
         <Card title={detail ? `${detail.match.home.name} ${score(detail.match)} ${detail.match.away.name}` : 'Goals'}
           right={detail && <span className="text-[11px] text-slate-500">{dateLabel(detail.match.date)}{detail.match.league ? ` · ${detail.match.league}` : ''}</span>}>
           {detailError && <Notice>{detailError}</Notice>}
-          {!detail && !detailError && <p className="text-sm text-slate-400">Loading…</p>}
+          {!detail && !detailError && <p className="text-sm text-slate-400">Loading goals from PitchAPI…</p>}
           {detail && (
             <>
               {detail.warnings.map((w, i) => <div key={i} className="mb-2"><Notice tone="warn">{w}</Notice></div>)}

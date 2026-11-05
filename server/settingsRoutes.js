@@ -4,6 +4,7 @@ import { config, CATEGORIES, DEFAULT_CATEGORIES, setCategories } from './config.
 import { envView, updateEnv } from './services/envFile.js';
 import * as yt from './services/youtubeClient.js';
 import { translatePending } from './services/translate.js';
+import { listLeagues, keyConfigured as pitchKeyConfigured } from './football/pitchApi.js';
 
 const router = Router();
 const bad = (m) => Object.assign(new Error(m), { status: 400 });
@@ -32,6 +33,14 @@ router.post('/env/test', wrap(async (req) => {
     const models = (body.data ?? []).map((m) => m.id).filter((id) => /^(gpt|o\d|chatgpt)/.test(id)).sort().slice(0, 80);
     return { ok: true, message: 'The OpenAI key works.', models };
   }
+  if (req.body?.target === 'pitchapi') {
+    if (!pitchKeyConfigured()) throw bad('No PitchAPI key is saved.');
+    try {
+      const r = await listLeagues();
+      return { ok: true, message: `The PitchAPI key works (${r.leagues?.length ?? 0} leagues available).` };
+    } catch (e) { throw bad(e.message); }
+  }
+
   throw bad('Unknown test target.');
 }));
 

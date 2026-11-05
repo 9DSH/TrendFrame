@@ -27,6 +27,9 @@ export const ENV_FIELDS = [
   { key: 'DB_PATH', label: 'Database file', group: 'server', default: './data/trendframe.db', restart: true,
     help: 'A different path starts a new, empty database (the old file is kept). Needs a restart.',
     get: () => process.env.DB_PATH || './data/trendframe.db' },
+  { key: 'PITCHAPI_API_KEY', label: 'PitchAPI key', secret: true, group: 'keys',
+    help: 'Used by the Football goals page. Free at pitchapi.dev/get-api-key. Applies immediately, no restart needed.',
+    get: () => process.env.PITCHAPI_API_KEY || '' },
 ];
 const byKey = new Map(ENV_FIELDS.map((f) => [f.key, f]));
 
