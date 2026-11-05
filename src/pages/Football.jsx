@@ -18,6 +18,7 @@ function interpretation(i) {
   if (i.competitions.length) parts.push(`competition ${i.competitions.join(', ')}`);
   if (i.teams.length) parts.push(`${i.teams.length > 1 ? 'teams' : 'team'} ${i.teams.join(' vs ')}`);
   if (i.player) parts.push(`scorer ${i.player}`);
+  if (i.club) parts.push(`club ${i.club}`);
   return parts.join(' · ');
 }
 

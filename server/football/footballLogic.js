@@ -7,6 +7,72 @@ export const GOAL_Y = 34;
 const STOP = new Set(['vs', 'v', 'versus', 'against', 'the', 'fc', 'cf', 'match', 'matches', 'game', 'games',
   'goal', 'goals', 'and', 'in', 'at', 'of']);
 
+  // ---------- team nicknames ----------
+
+// Nickname -> a word of the real team name. Only used when the nickname is not itself part of a team name.
+const ALIASES = {
+  wolves: 'wolverhampton', spurs: 'tottenham', gunners: 'arsenal', toon: 'newcastle', magpies: 'newcastle',
+  foxes: 'leicester', saints: 'southampton', hammers: 'west ham', baggies: 'west brom', utd: 'united',
+  barca: 'barcelona', atleti: 'atletico', psg: 'paris', juve: 'juventus', gladbach: 'monchengladbach',
+};
+const VS = new Set(['vs', 'v', 'versus', 'against']);
+
+/** Words typed after "vs": they are almost certainly a team. */
+export function vsHints(raw) {
+  const w = words(raw);
+  const out = new Set();
+  w.forEach((t, i) => {
+    if (!VS.has(t)) return;
+    for (const x of w.slice(i + 1, i + 4)) {
+      if (VS.has(x)) break;
+      if (!STOP.has(x) && !/^\d+$/.test(x)) out.add(x);
+    }
+  });
+  return out;
+}
+
+function commonPrefix(a, b) {
+  let n = 0;
+  while (n < a.length && n < b.length && a[n] === b[n]) n++;
+  return n;
+}
+
+/** Closest team-name word: shares a prefix of at least 4 letters (5 for longer words). Null when nothing is close. */
+function closestTeamWord(token, vocab) {
+  const need = Math.max(4, Math.min(token.length, 5));
+  let best = null;
+  let bestLen = 0;
+  for (const w of vocab) {
+    const n = commonPrefix(token, w);
+    if (n >= need && (n > bestLen || (n === bestLen && w.length < best.length))) { best = w; bestLen = n; }
+  }
+  return best;
+}
+
+/**
+ * Rewrites query words that are not part of any team name but clearly mean one: a known nickname ("wolves"),
+ * or a word after "vs" that is close to a team word ("wolv"). Everything else, such as player names, is left alone.
+ * Returns the new tokens and the new set of positions already used by a competition.
+ */
+export function fixTeamTokens(tokens, consumed, hints, teamNames) {
+  const vocab = new Set(teamNames.flatMap((t) => t.split(' ').filter(Boolean)));
+  const out = [];
+  const used = new Set();
+  tokens.forEach((t, i) => {
+    let next = [t];
+    if (!consumed.has(i) && !vocab.has(t)) {
+      const alias = ALIASES[t]?.split(' ');
+      if (alias && alias.every((a) => vocab.has(a))) next = alias;
+      else if (hints.has(t)) {
+        const near = closestTeamWord(t, vocab);
+        if (near) next = [near];
+      }
+    }
+    next.forEach((x) => { if (consumed.has(i)) used.add(out.length); out.push(x); });
+  });
+  return { tokens: out, consumed: used };
+}
+
 export const normalize = (s) => String(s ?? '')
   .normalize('NFD').replace(/\p{M}+/gu, '')
   .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();

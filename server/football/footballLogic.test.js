@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseQuery, seasonCovers, latestSeason, earliestYear, matchYearOk, findCompetitions, splitTeamsAndPlayer,
-  matchHasTeams, nameMatchesPlayer, shotDistance, buildGoals, goalsByPlayer, mapPool,
+  matchHasTeams, nameMatchesPlayer,fixTeamTokens, vsHints, shotDistance, buildGoals, goalsByPlayer, mapPool,
 } from './footballLogic.js';
 
 test('parseQuery pulls out the year and keeps the other words', () => {
@@ -22,6 +22,20 @@ test('seasonCovers: a lone year can fall in two fall-spring seasons, a pinned se
   assert.equal(seasonCovers('2023/2024', { year: 2023, seasonStart: 2023 }), true);
   assert.equal(seasonCovers('2024/2025', { year: 2023, seasonStart: 2023 }), false);
 });
+
+test('vsHints and fixTeamTokens turn "wolves" into a real team word and leave player names alone', () => {
+  const teams = ['wolverhampton wanderers', 'leeds united', 'tottenham hotspur'];
+  assert.deepEqual([...vsHints('Anton Stach vs wolves 2025')], ['wolves']);
+  const a = fixTeamTokens(['anton', 'stach', 'wolves'], new Set(), vsHints('Anton Stach vs wolves'), teams);
+  assert.deepEqual(a.tokens, ['anton', 'stach', 'wolverhampton']);
+  const b = fixTeamTokens(['son', 'spurs'], new Set(), new Set(), teams);
+  assert.deepEqual(b.tokens, ['son', 'tottenham']);
+  const c = fixTeamTokens(['kane', 'wolv'], new Set(), vsHints('kane vs wolv'), teams);
+  assert.deepEqual(c.tokens, ['kane', 'wolverhampton']);
+  const d = fixTeamTokens(['leeds', 'stach'], new Set(), new Set(), teams); // already a team word, untouched
+  assert.deepEqual(d.tokens, ['leeds', 'stach']);
+});
+
 
 test('latestSeason and earliestYear read the real season labels', () => {
   const leagues = [{ seasons: ['2024/2025', '2025/2026', '2021/2022'] }, { seasons: ['2024'] }];

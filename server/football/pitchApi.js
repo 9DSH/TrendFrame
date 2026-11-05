@@ -11,6 +11,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export const pitchEvents = new EventEmitter();
 let pausedUntil = 0; // shared: when one call gets a 429, every call waits
 
+export const matchLineups = (id) => get(`/v1/matches/${encodeURIComponent(id)}/lineups`);
+
 export class PitchApiError extends Error {
   constructor(message, { status = 0, code = 'UNKNOWN' } = {}) {
     super(message);
