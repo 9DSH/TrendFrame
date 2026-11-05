@@ -13,6 +13,7 @@ import settingsRoutes from './settingsRoutes.js';
 import projectRoutes from './projectRoutes.js';
 import systemRoutes from './systemRoutes.js';
 import { startScheduler } from './services/scheduler.js';
+import footballRoutes from './football/routes.js';
 
 const prod = process.argv.includes('--prod');
 const dist = path.join(ROOT, 'dist');
@@ -27,6 +28,7 @@ app.use('/api', channelRoutes);
 app.use('/api', settingsRoutes);
 app.use('/api', projectRoutes);
 app.use('/api', systemRoutes);
+app.use('/api', footballRoutes);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 if (prod) {

@@ -54,5 +54,8 @@ export const api = {
   saveSchedule: (body) => request('/schedule', { method: 'PUT', body: JSON.stringify(body) }),
   backup: () => post('/backup'),
   translate: () => post('/translate'),
+  footballStatus: () => request('/football/status'), 
+  footballSearch: (q) => request(`/football/search?${query({ q })}`),
+  footballGoals: (id) => request(`/football/matches/${id}/goals`),
 
 };

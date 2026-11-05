@@ -27,6 +27,7 @@ const GROUPS = [
     items: [
       ['/projects', 'Saved projects'],
       ['/collection', 'Collection'],
+      ['/football', 'Football goals'],
     ],
   },
   {
